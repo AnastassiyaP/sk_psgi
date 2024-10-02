@@ -34,43 +34,43 @@ use constant STATUS_UNKNOWN => 'unknown';
 use constant STATUS_EXPIRED => 'expired';
 use constant STATUS_INVALID => 'invalid';
 
+use constant LARGE_SHOP_ID = 10 ** 6;
 my $CFG = require "$dir/unit-app.conf";
 
 SFE::Logger->level( $CFG->{ log_level } // 'warning' );
 
 my $SQL_actionByCardNumber = <<SQL;
-   SELECT `card_action`.id, `card_action`.action_id, action, `card_action_addr`.addr
+   SELECT `card_action`.id,
+   `card_action`.action_id,
+   action, options, actions.addr
    FROM `card_action`
-   LEFT JOIN `action_status` ON (`card_action`.action_id = `action_status`.action_id)
-   LEFT JOIN `card_action_addr` ON (`card_action`.action_id = `card_action_addr`.action_id)
+   JOIN `actions`  ON (`card_action`.action_id = `actions`.parent_id)
    WHERE card_number = ?
-     AND `action_status`.status = 'run'
-     AND start_date <= NOW()
-     AND NOW() < end_date
-     AND ( disc_count_limit = 0 OR disc_count < disc_count_limit ) 
+     AND `actions`.status = 'run'
+     AND actions.start_date <= NOW()
+     AND NOW() < actions.end_date
+     AND ( disc_count_limit = 0 OR (select count(*) from card_usage where card_number = card_action.card_number) < disc_count_limit ) 
 SQL
 my $SQL_actionByCoupon = <<SQL;
    SELECT `card_action`.id,
           `card_action`.action_id,
-          action,
-          `card_action_addr`.addr,
-          disc_count_limit,
-          disc_count,
-          start_date,
+          `card_action`.action,
+          actions.options,
+          `actions`.addr,
+          actions.disc_count_limit,
+          disc_count = (select count(*) from card_usage where card_number = card_action.card_number),
+          actions.start_date,
+          actions.end_date,
+          actions.status
           NOW() AS now_date,
-          end_date,
-          `action_status`.status
    FROM `card_action`
-   LEFT JOIN `action_status` ON (`card_action`.action_id = `action_status`.action_id)
-   LEFT JOIN `card_action_addr` ON (`card_action`.action_id = `card_action_addr`.action_id)
+   JOIN `actions`  ON (`card_action`.action_id = `actions`.parent_id)
    WHERE card_number = ?
 SQL
 
-my $SQL_increaseCntByActionAndCardNumber = <<SQL;
-   UPDATE `card_action`
-   SET disc_count = disc_count + 1
-   WHERE card_number = ?
-     AND action_id = ?
+my $SQL_add_card_usage = <<SQL;
+   INSERT INTO `card_usage`(action_id, card_number, shop_id)
+   values(?,?,?)
 SQL
 
 my $app = sub {
@@ -127,11 +127,21 @@ sub new_new_new {
     $self->{ method }    = $req->method();
     $self->{ path_info } = $req->path_info();
     $self->{ dbh }       = connect_db();
+    
+    my $shop_map = {
+        'IA' => LARGE_SHOP_ID,
+        'undef' => 0,
+    };
 
     my $trade = $params->{ trade };
-    if ( $trade && ( $trade eq 'undef' || $trade eq 'IA' ) ) {
+    if ( $trade && exists $shop_map->{ $trade } ) {
         $trade = undef;
+        
+        $self->{ shop_id } = $shop_map->{$trade};
+    } else if ( $trade ) {
+         $self->{ shop_id } = $trade =~ s/^TM//ir;
     }
+    
     $self->{ trade } = $trade;
 
     return $self;
@@ -155,7 +165,10 @@ sub getAction
         $self->check_addr( $res->{ addr } ) or next;
 
         push @actionId, $res->{ action_id };
-        my $action = $self->prepareAction( $cardNumber, $res->{ action } );
+        my $action = $self->prepareAction(
+            $cardNumber,
+            $res->{ options },
+            $res->{ action } );
         push @answer, $action;
     }
     $sth->finish();
@@ -196,7 +209,7 @@ sub getCoupon
 
         if ( $status eq STATUS_OK ) {
             push @actionIdToBind, $res->{ action_id };
-            my $action = $self->prepareAction( $cardNumber, $res->{ action } );
+            my $action = $self->prepareAction( $cardNumber, $res->{ options }, $res->{ action } );
             $answer->{ action } = $action;
         }
     }
@@ -221,19 +234,28 @@ sub getCoupon
     return $res->finalize();
 }
 ################################################################################
+#Подставляет из card_action.action значения в actions.options,
+# формирует итоговый json с акцией 
 sub prepareAction {
     my $self       = shift;
     my $cardNumber = shift;
+    my $optonsJson = shift;
     my $actionJson = shift;
+    
+    my $args = decode_json( $actionJson );
+    $optonsJson = s/%%%(\w+?)%%%/$args->{$1}/ge;
+    my $action = decode_json( $optonsJson );
 
-    my $action = decode_json( $actionJson );
     if ( $action->{ aId } && $action->{ aId } =~ /^[0-9]+$/ )
     {
         $action->{ aId } .= "_" . $cardNumber;
     }
+    
+    
 
     return $action;
 }
+
 ################################################################################
 #    action             "{\"aId\": 3144 ...........}",
 #    action_id          3144,
@@ -344,13 +366,13 @@ sub put
     my $params = $self->{ req }->query_parameters;
 
     my @actionsId = $params->get_all( "actionsId" );
-
+    
     foreach ( @actionsId )
     {
         my ( $action_id, $card_number ) = split "_";
         $dbh->do(
-            $SQL_increaseCntByActionAndCardNumber,
-            undef, $card_number, $action_id
+            $SQL_add_card_usage,
+            undef, $action_id, $card_number, $self->{shop_id}
             )
             or die "Can't update mysql: " . $dbh->err . " (" . $dbh->errstr . ")";
     }
@@ -359,15 +381,17 @@ sub put
     $res->body( "OK\n" );
     return $res->finalize();
 }
+
 ################################################################################
 sub check_addr {
     my $self     = shift;
     my $addrJson = shift;
 
-    my $trade = $self->{ trade };
+    my $shop_id = $self->{ shop_id };
 
     # Если $trade или $addrJson не задан, то не ограничиваем по адресу
-    defined $trade    or return 1;
+    ($shop_id and $shop_id ne LARGE_SHOP_ID)
+        or return 1;
     defined $addrJson or return 1;
 
     my $addr = decode_json( $addrJson );
@@ -375,11 +399,9 @@ sub check_addr {
     # Если все, то дальше смотреть не нужно
     $addr->{ all } && return 1;
 
-    # В $addr только номера
-    $trade =~ s/^TM//i;
-
-    return checkShopIdsByAddr( $self->{ dbh }, $trade, $addr );
+    return checkShopIdsByAddr( $self->{ dbh }, $shop_id, $addr );
 }
+
 ################################################################################
 sub connect_db
 {

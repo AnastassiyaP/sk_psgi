@@ -38,22 +38,15 @@ my $SQL_AddCouponAction = <<SQL;
     INTO `card_action` (
         action_id,
         card_number,
-        start_date,
-        end_date,
-        action,
-        disc_count_limit,
-        disc_count
+        action
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?)
 SQL
 
 my $SQL_SetRunStatus = <<SQL;
-    INSERT IGNORE
-    INTO `action_status` (
-        action_id,
-        status
-    )
-    VALUES (?, 'run')
+UPDATE actions
+SET status = 'run'
+WHERE parent_id = ?;
 SQL
 
 my $app = sub {
@@ -103,28 +96,13 @@ sub get
         elsif ( 'genbmp' eq $cmd )
         {
             my $couponNumber = 99 . generateCouponNumber( 12 );
-            my $coupon       = $couponNumber;
-            my $couponBmp    = generateCouponImg( $result->{ bmp_fld }, $coupon );
-
-            my $action = decode_json( $result->{ options } );
-            $action->{ aId } = $actionId;
-
-            my $cntCpCode = getFreeCntInAction( $action );
-            $action->{ cnt }->{ $cntCpCode } = [ "cp.code", $coupon ];
-
-            foreach ( @{ $action->{ rls } } )
-            {
-                $_->{ cond } = "$cntCpCode>0 & (" . $_->{ cond } . ")";
-            }
-
-            my $discCountLimit = 1;
-            my $discCount      = 0;
-            my $actionJson     = encode_json( $action );
-
+            my $couponBmp    = generateCouponImg( $result->{ bmp_fld }, $couponNumber );
+            my $actionJson     = encode_json ( {"CARD_NUMBER": $couponNumber} );
+            
             $dbh->do(
                 $SQL_AddCouponAction,
-                undef, $actionId, $couponNumber, $result->{ start_date },
-                $result->{ end_date }, $actionJson, $discCountLimit, $discCount
+                undef, $actionId, $couponNumber,
+                $actionJson
             );
 
             # Нужно включить акцию
@@ -168,21 +146,5 @@ sub _connect_db
         )
         or die "Can't connect to MySQL: $DBI::err ($DBI::errstr)";
     return $dbh;
-}
-################################################################################
-# Ищем первый свободный счётчик
-sub getFreeCntInAction
-{
-    my $action = shift;
-    my $cntCpCode;
-    for ( my $i = 1 ; $i <= 100 ; ++$i )
-    {
-        $cntCpCode = "c$i";
-        unless ( $action->{ cnt }->{ $cntCpCode } )
-        {
-            last;
-        }
-    }
-    return $cntCpCode;
 }
 ################################################################################
