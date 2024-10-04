@@ -134,12 +134,11 @@ sub new_new_new {
     };
 
     my $trade = $params->{ trade };
-    if ( $trade && exists $shop_map->{ $trade } ) {
-        $trade = undef;
-        
-        $self->{ shop_id } = $shop_map->{$trade};
-    } else if ( $trade ) {
-         $self->{ shop_id } = $trade =~ s/^TM//ir;
+    if ( $trade ) {
+        if ( exists $shop_map->{ $trade } ) {
+            $trade = undef;
+        }
+        $self->{ shop_id } = $shop_map->{$trade} // $trade =~ s/^TM//ir;
     }
     
     $self->{ trade } = $trade;
