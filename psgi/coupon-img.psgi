@@ -28,8 +28,8 @@ my $CFG = require "$dir/unit-app.conf";
 #      AND NOW() < end_date
 my $SQL_actionByActionId = <<SQL;
     SELECT *
-    FROM `actions`
-    WHERE parent_id = ?
+    FROM `actions_v2`
+    WHERE id = ?
       AND status = 'run'
 SQL
 
@@ -44,9 +44,9 @@ my $SQL_AddCouponAction = <<SQL;
 SQL
 
 my $SQL_SetRunStatus = <<SQL;
-UPDATE actions
+UPDATE actions_v2
 SET status = 'run'
-WHERE parent_id = ?;
+WHERE id = ?;
 SQL
 
 my $app = sub {
@@ -97,7 +97,7 @@ sub get
         {
             my $couponNumber = 99 . generateCouponNumber( 12 );
             my $couponBmp    = generateCouponImg( $result->{ bmp_fld }, $couponNumber );
-            my $actionJson     = encode_json ( {"CARD_NUMBER": $couponNumber} );
+            my $actionJson     = encode_json ( {"CARD_NUMBER"=> $couponNumber} );
             
             $dbh->do(
                 $SQL_AddCouponAction,

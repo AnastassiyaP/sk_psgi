@@ -34,7 +34,7 @@ use constant STATUS_UNKNOWN => 'unknown';
 use constant STATUS_EXPIRED => 'expired';
 use constant STATUS_INVALID => 'invalid';
 
-use constant LARGE_SHOP_ID = 10 ** 6;
+use constant LARGE_SHOP_ID => 10 ** 6;
 my $CFG = require "$dir/unit-app.conf";
 
 SFE::Logger->level( $CFG->{ log_level } // 'warning' );
@@ -42,27 +42,27 @@ SFE::Logger->level( $CFG->{ log_level } // 'warning' );
 my $SQL_actionByCardNumber = <<SQL;
    SELECT `card_action`.id,
    `card_action`.action_id,
-   action, options, actions.addr
+   action, action_body, actions.addr
    FROM `card_action`
    JOIN `actions`  ON (`card_action`.action_id = `actions`.parent_id)
    WHERE card_number = ?
      AND `actions`.status = 'run'
      AND actions.start_date <= NOW()
      AND NOW() < actions.end_date
-     AND ( disc_count_limit = 0 OR (select count(*) from card_usage where card_number = card_action.card_number) < disc_count_limit ) 
+     AND ( `limit` = 0 OR (select count(*) from card_usage where card_number = card_action.card_number) < `limit` ) 
 SQL
 my $SQL_actionByCoupon = <<SQL;
    SELECT `card_action`.id,
           `card_action`.action_id,
           `card_action`.action,
-          actions.options,
+          actions.action_body,
           `actions`.addr,
-          actions.disc_count_limit,
-          disc_count = (select count(*) from card_usage where card_number = card_action.card_number),
+          actions.limit,
+          (select count(*) from card_usage where card_number = card_action.card_number) as disc_count,
           actions.start_date,
           actions.end_date,
-          actions.status
-          NOW() AS now_date,
+          actions.status,
+          NOW() AS now_date
    FROM `card_action`
    JOIN `actions`  ON (`card_action`.action_id = `actions`.parent_id)
    WHERE card_number = ?
