@@ -44,12 +44,12 @@ my $SQL_actionByCardNumber = <<SQL;
    `card_action`.action_id,
    action, action_body, actions.addr
    FROM `card_action`
-   JOIN `actions`  ON (`card_action`.action_id = `actions`.parent_id)
+   JOIN `actions_v2` actions  ON (`card_action`.action_id = `actions`.id)
    WHERE card_number = ?
      AND `actions`.status = 'run'
      AND actions.start_date <= NOW()
      AND NOW() < actions.end_date
-     AND ( `limit` = 0 OR (select count(*) from card_usage where card_number = card_action.card_number) < `limit` ) 
+     AND ( `limit` = 0 OR (select count(*) from card_usage where card_number = card_action.card_number) <= `limit` ) 
 SQL
 my $SQL_actionByCoupon = <<SQL;
    SELECT `card_action`.id,
@@ -64,13 +64,13 @@ my $SQL_actionByCoupon = <<SQL;
           actions.status,
           NOW() AS now_date
    FROM `card_action`
-   JOIN `actions`  ON (`card_action`.action_id = `actions`.parent_id)
+   JOIN `actions_v2` actions  ON (`card_action`.action_id = `actions`.id)
    WHERE card_number = ?
 SQL
 
 my $SQL_add_card_usage = <<SQL;
-   INSERT INTO `card_usage`(action_id, card_number, shop_id)
-   values(?,?,?)
+   INSERT INTO `card_usage`(uniq_key, receipt_ts, action_id, card_number, shop_id)
+   values(?,?,?,?,?)
 SQL
 
 my $app = sub {
@@ -166,7 +166,7 @@ sub getAction
         push @actionId, $res->{ action_id };
         my $action = $self->prepareAction(
             $cardNumber,
-            $res->{ options },
+            $res->{ action_body },
             $res->{ action } );
         push @answer, $action;
     }
@@ -208,7 +208,7 @@ sub getCoupon
 
         if ( $status eq STATUS_OK ) {
             push @actionIdToBind, $res->{ action_id };
-            my $action = $self->prepareAction( $cardNumber, $res->{ options }, $res->{ action } );
+            my $action = $self->prepareAction( $cardNumber, $res->{ action_body }, $res->{ action } );
             $answer->{ action } = $action;
         }
     }
@@ -238,20 +238,19 @@ sub getCoupon
 sub prepareAction {
     my $self       = shift;
     my $cardNumber = shift;
-    my $optonsJson = shift;
-    my $actionJson = shift;
-    
-    my $args = decode_json( $actionJson );
-    $optonsJson = s/%%%(\w+?)%%%/$args->{$1}/ge;
-    my $action = decode_json( $optonsJson );
+    my $action_body = shift;
+    my $action_params_json = shift;
+
+    my $action_params = decode_json( $action_params_json );
+    $action_body =~ s/%%%(\w+)%%%/$action_params->{$1}/ge;
+
+    my $action = decode_json( $action_body );
 
     if ( $action->{ aId } && $action->{ aId } =~ /^[0-9]+$/ )
     {
         $action->{ aId } .= "_" . $cardNumber;
     }
     
-    
-
     return $action;
 }
 
@@ -271,7 +270,7 @@ sub couponStatus {
     my $self = shift;
     my $arg  = shift;
 
-    my $disc_count_limit = $arg->{ disc_count_limit };
+    my $disc_count_limit = $arg->{ limit };
     my $disc_count       = $arg->{ disc_count };
 
     # invalid - купон был использован и погашен ранее
@@ -363,15 +362,22 @@ sub put
     # $data->{uniqKey}
     #    my $params = $arg->{req}->parameters;
     my $params = $self->{ req }->query_parameters;
-
+    
+    my $uniq_key = $params->{uniqKey};
+    my $receipt_ts = $params->{receiptTS};
     my @actionsId = $params->get_all( "actionsId" );
+    
+    unless ( $uniq_key && defined $receipt_ts && scalar @actionsId){
+        my $res = $self->{ req }->new_response( 400 );
+        $res->body( "Необходимые аргументы для сохранения записи: uniqKey, receiptTS, actionsId" );
+    }
     
     foreach ( @actionsId )
     {
         my ( $action_id, $card_number ) = split "_";
         $dbh->do(
             $SQL_add_card_usage,
-            undef, $action_id, $card_number, $self->{shop_id}
+            undef, $uniq_key, $receipt_ts,  $action_id, $card_number, $self->{shop_id} // 0
             )
             or die "Can't update mysql: " . $dbh->err . " (" . $dbh->errstr . ")";
     }
