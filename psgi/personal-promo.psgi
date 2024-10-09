@@ -40,9 +40,8 @@ my $CFG = require "$dir/unit-app.conf";
 SFE::Logger->level( $CFG->{ log_level } // 'warning' );
 
 my $SQL_actionByCardNumber = <<SQL;
-   SELECT `card_action`.id,
-   `card_action`.action_id,
-   action, action_body, actions.addr
+   SELECT `card_action`.action_id,
+   placeholders, action_body, actions.addr
    FROM `card_action`
    JOIN `actions_v2` actions  ON (`card_action`.action_id = `actions`.id)
    WHERE card_number = ?
@@ -52,9 +51,8 @@ my $SQL_actionByCardNumber = <<SQL;
      AND ( `limit` = 0 OR (select count(*) from card_usage where card_number = card_action.card_number) <= `limit` ) 
 SQL
 my $SQL_actionByCoupon = <<SQL;
-   SELECT `card_action`.id,
-          `card_action`.action_id,
-          `card_action`.action,
+   SELECT `card_action`.action_id,
+          `card_action`.placeholders,
           actions.action_body,
           `actions`.addr,
           actions.limit,
@@ -135,10 +133,10 @@ sub new_new_new {
 
     my $trade = $params->{ trade };
     if ( $trade ) {
-        if ( exists $shop_map->{ $trade } ) {
+        $self->{ shop_id } = $shop_map->{$trade} // $trade =~ s/^TM//ir;
+        if ( $shop_map->{ $trade } ) {
             $trade = undef;
         }
-        $self->{ shop_id } = $shop_map->{$trade} // $trade =~ s/^TM//ir;
     }
     
     $self->{ trade } = $trade;
@@ -167,7 +165,7 @@ sub getAction
         my $action = $self->prepareAction(
             $cardNumber,
             $res->{ action_body },
-            $res->{ action } );
+            $res->{ placeholders } );
         push @answer, $action;
     }
     $sth->finish();
@@ -208,7 +206,7 @@ sub getCoupon
 
         if ( $status eq STATUS_OK ) {
             push @actionIdToBind, $res->{ action_id };
-            my $action = $self->prepareAction( $cardNumber, $res->{ action_body }, $res->{ action } );
+            my $action = $self->prepareAction( $cardNumber, $res->{ action_body }, $res->{ placeholders } );
             $answer->{ action } = $action;
         }
     }
@@ -370,6 +368,7 @@ sub put
     unless ( $uniq_key && defined $receipt_ts && scalar @actionsId){
         my $res = $self->{ req }->new_response( 400 );
         $res->body( "Необходимые аргументы для сохранения записи: uniqKey, receiptTS, actionsId" );
+        return $res->finalize();
     }
     
     foreach ( @actionsId )

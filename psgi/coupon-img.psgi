@@ -38,7 +38,7 @@ my $SQL_AddCouponAction = <<SQL;
     INTO `card_action` (
         action_id,
         card_number,
-        action
+        placeholders
     )
     VALUES (?, ?, ?)
 SQL
