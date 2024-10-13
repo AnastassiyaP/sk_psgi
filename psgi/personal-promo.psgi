@@ -41,7 +41,10 @@ SFE::Logger->level( $CFG->{ log_level } // 'warning' );
 
 my $SQL_actionByCardNumber = <<SQL;
    SELECT `card_action`.action_id,
-   placeholders, action_body, actions.addr
+     placeholders, action_body, actions.addr,
+     actions.start_date,
+     actions.end_date
+
    FROM `card_action`
    JOIN `actions_v2` actions  ON (`card_action`.action_id = `actions`.id)
    WHERE card_number = ?
@@ -50,6 +53,7 @@ my $SQL_actionByCardNumber = <<SQL;
      AND NOW() < actions.end_date
      AND ( `limit` = 0 OR (select count(*) from card_usage where card_number = card_action.card_number) <= `limit` ) 
 SQL
+
 my $SQL_actionByCoupon = <<SQL;
    SELECT `card_action`.action_id,
           `card_action`.placeholders,
@@ -164,8 +168,8 @@ sub getAction
         push @actionId, $res->{ action_id };
         my $action = $self->prepareAction(
             $cardNumber,
-            $res->{ action_body },
-            $res->{ placeholders } );
+            $res
+        );
         push @answer, $action;
     }
     $sth->finish();
@@ -206,7 +210,7 @@ sub getCoupon
 
         if ( $status eq STATUS_OK ) {
             push @actionIdToBind, $res->{ action_id };
-            my $action = $self->prepareAction( $cardNumber, $res->{ action_body }, $res->{ placeholders } );
+            my $action = $self->prepareAction( $cardNumber, $res );
             $answer->{ action } = $action;
         }
     }
@@ -231,17 +235,24 @@ sub getCoupon
     return $res->finalize();
 }
 ################################################################################
-#Подставляет из card_action.action значения в actions.options,
+#Подставляет в actions.action_body значения из card_action.placeholders и предопределенные из базы.
 # формирует итоговый json с акцией 
 sub prepareAction {
-    my $self       = shift;
-    my $cardNumber = shift;
-    my $action_body = shift;
-    my $action_params_json = shift;
+    my $self        = shift;
+    my $cardNumber  = shift;
+    my $card_action = shift;
 
-    my $action_params = decode_json( $action_params_json );
-    $action_body =~ s/%%%(\w+)%%%/$action_params->{$1}/ge;
+    my $action_body = $card_action->{ action_body };
+    my $placeholders = decode_json($card_action->{ placeholders }|| '{}');
 
+    $placeholders->{CARD_NUMBER}   = $cardNumber;
+    $placeholders->{COUPON_NUMBER} = $cardNumber;
+    $placeholders->{ACTION_ID}     = $card_action->{action_id};
+    $placeholders->{START_DATE}    = $card_action->{start_date};
+    $placeholders->{END_DATE}      = $card_action->{end_date};
+
+    $action_body =~ s/%%%(\w+)%%%/$placeholders->{$1}/ge;
+    
     my $action = decode_json( $action_body );
 
     if ( $action->{ aId } && $action->{ aId } =~ /^[0-9]+$/ )

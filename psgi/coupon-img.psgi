@@ -37,10 +37,9 @@ my $SQL_AddCouponAction = <<SQL;
     INSERT
     INTO `card_action` (
         action_id,
-        card_number,
-        placeholders
+        card_number
     )
-    VALUES (?, ?, ?)
+    VALUES (?, ?)
 SQL
 
 my $SQL_SetRunStatus = <<SQL;
@@ -97,12 +96,10 @@ sub get
         {
             my $couponNumber = 99 . generateCouponNumber( 12 );
             my $couponBmp    = generateCouponImg( $result->{ bmp_fld }, $couponNumber );
-            my $actionJson     = encode_json ( {"CARD_NUMBER"=> $couponNumber} );
             
             $dbh->do(
                 $SQL_AddCouponAction,
-                undef, $actionId, $couponNumber,
-                $actionJson
+                undef, $actionId, $couponNumber
             );
 
             # Нужно включить акцию
