@@ -135,9 +135,10 @@ sub new_new_new {
         'undef' => 0,
     };
 
+
     my $trade = $params->{ trade };
     if ( $trade ) {
-        $self->{ shop_id } = ( defined $shop_map->{ $trade } ) ?
+        $self->{ shop_id } = ( exists $shop_map->{ $trade } ) ?
             $shop_map->{ $trade } :
             $trade =~ s/^TM//ir;
     }
