@@ -420,7 +420,7 @@ sub connect_db
     state $dbh;
     $dbh //= DBI->connect_cached(
         $CFG->{ sql_dsn }, $CFG->{ sql_user }, $CFG->{ sql_pass },
-        { PrintError => 0, mysql_enable_utf8 => 1 }
+        { RaiseError => 1, mysql_enable_utf8 => 1 }
         )
         or die "Can't connect to MySQL: $DBI::err ($DBI::errstr)";
     return $dbh;
