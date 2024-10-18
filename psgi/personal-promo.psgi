@@ -51,7 +51,12 @@ my $SQL_actionByCardNumber = <<SQL;
      AND `actions`.status = 'run'
      AND actions.start_date <= NOW()
      AND NOW() < actions.end_date
-     AND ( `limit` = 0 OR (select count(*) from card_usage where card_number = card_action.card_number) <= `limit` ) 
+     AND ( `limit` = 0 OR (
+                select count(*) from card_usage
+                where card_number = card_action.card_number
+                and action_id = card_action.action_id
+            ) <= `limit`
+         ) 
 SQL
 
 my $SQL_actionByCoupon = <<SQL;
