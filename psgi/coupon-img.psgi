@@ -42,12 +42,6 @@ my $SQL_AddCouponAction = <<SQL;
     VALUES (?, ?)
 SQL
 
-my $SQL_SetRunStatus = <<SQL;
-UPDATE actions_v2
-SET status = 'run'
-WHERE id = ?;
-SQL
-
 my $app = sub {
     my $env = shift;
 
@@ -100,13 +94,6 @@ sub get
             $dbh->do(
                 $SQL_AddCouponAction,
                 undef, $actionId, $couponNumber
-            );
-
-            # Нужно включить акцию
-            # В большинстве случаев акция уже включена раньше
-            $dbh->do(
-                $SQL_SetRunStatus,
-                undef, $actionId
             );
 
             $answer->{ type }  = 'bmp';
