@@ -1,4 +1,4 @@
-use 5.10.0;
+use 5.14.0;
 use strict;
 use warnings;
 
@@ -34,7 +34,7 @@ use constant STATUS_UNKNOWN => 'unknown';
 use constant STATUS_EXPIRED => 'expired';
 use constant STATUS_INVALID => 'invalid';
 
-use constant LARGE_SHOP_ID => 10 ** 6;
+use constant IA_SHOP_ID => 10 ** 6;
 my $CFG = require "$dir/unit-app.conf";
 
 SFE::Logger->level( $CFG->{ log_level } // 'warning' );
@@ -130,20 +130,17 @@ sub new_new_new {
     $self->{ path_info } = $req->path_info();
     $self->{ dbh }       = connect_db();
     
-    my $shop_map = {
-        'IA' => LARGE_SHOP_ID,
+    state $shop_map = {
+        'IA' => IA_SHOP_ID,
         'undef' => 0,
     };
 
     my $trade = $params->{ trade };
     if ( $trade ) {
-        $self->{ shop_id } = $shop_map->{$trade} // $trade =~ s/^TM//ir;
-        if ( $shop_map->{ $trade } ) {
-            $trade = undef;
-        }
+        $self->{ shop_id } = ( defined $shop_map->{ $trade } ) ?
+            $shop_map->{ $trade } :
+            $trade =~ s/^TM//ir;
     }
-    
-    $self->{ trade } = $trade;
 
     return $self;
 }
@@ -401,11 +398,10 @@ sub put
 sub check_addr {
     my $self     = shift;
     my $addrJson = shift;
-
     my $shop_id = $self->{ shop_id };
 
-    # Если $trade или $addrJson не задан, то не ограничиваем по адресу
-    ($shop_id and $shop_id ne LARGE_SHOP_ID)
+    # Если $shop_id или $addrJson не задан, то не ограничиваем по адресу
+    ($shop_id and $shop_id ne IA_SHOP_ID)
         or return 1;
     defined $addrJson or return 1;
 
