@@ -33,6 +33,7 @@ use constant STATUS_FAIL    => 'fail';
 use constant STATUS_UNKNOWN => 'unknown';
 use constant STATUS_EXPIRED => 'expired';
 use constant STATUS_INVALID => 'invalid';
+use constant STATUS_HOLDOUT => 'holdout';
 
 use constant IA_SHOP_ID => 10 ** 6 # интернет аптека;
 my $CFG = require "$dir/unit-app.conf";
@@ -50,6 +51,24 @@ my $SQL_add_card_usage = <<SQL;
     status)
    values(?,?,?,?,?,?)
 SQL
+
+
+my $SQL_actionByCoupon = <<SQL;
+   SELECT `card_action`.action_id,
+          `card_action`.placeholders,
+          actions.action_body,
+          `actions`.addr,
+          actions.limit,
+          (select count(*) from card_usage where card_number = card_action.card_number) as disc_count,
+          actions.start_date,
+          actions.end_date,
+          actions.status,
+          NOW() AS now_date
+   FROM `card_action`
+   JOIN `actions_v2` actions  ON (`card_action`.action_id = `actions`.id)
+   WHERE card_number = ?
+SQL
+
 
 my $app = sub {
     my $env = shift;
@@ -80,6 +99,7 @@ sub holdout
 {
     my ($request, $params) = @_;
     # TODO:
+    # проверка карты по акции, а не купона
     # проверка что купон можно применить
     # проверка корзины в ia_cart_card
     # что делать с receiptTS и uniqKey
@@ -96,11 +116,51 @@ sub holdout
 
     #my $cardNumber = $params->{ cardNumber };
     my $coupon = $params->{ coupon };
-    my $cart       = $params->{ cartId };
+    my $cart   = $params->{ cartId };
+    
+    
+    my $row = $dbh->selectrow_hashref( "select card_number from ia_cart_card where coupon_id=$coupon and cart=$cart" );
+    my $card_number = $row->{card_number};
+    
+    return fail($coupon, $cart) unless $card_number;
+    
+    my $action = $dbh->selectrow_hashref("SELECT *
+       FROM coupon c
+       JOIN action_v2 a on c.action_id=a.id
+        
+       WHERE c.code=$coupon
+       AND a.status = 'run'
+       AND a.start_date <= NOW()
+       AND NOW() < a.end_date
+    ");
+    
+    return fail($coupon, $cart) unless $action;
+    
+    # TODO может ли быть задан лимит типа - 5 применений купона на карту?
+    # или лимит всегда только на коллличество карт
+    
+    # в какой ситуа
+    my $coupon_usage = $dbh->selectrow_hashref("
+    select status, count(*) as cnt from coupon_usage
+    where coupon_id = $coupon_id
+    and status in('holdout','accepted') and card_number=$card_number");
+    
+    $coupon_usage == 1
+        or return fail($coupon, $cart); 
+    
+    
+    
 
-    my $uniq_key = $params->{uniqKey};
-    my $receipt_ts = $cart;# $params->{receiptTS};
-    my @actionsId = $params->get_all( "actionsId" );
+-- количество использований вообще
+select count(*) from coupon_usage
+where coupon_id = $coupon_id
+and status in('holdout','accepted')
+
+-- количество использований с этой картой 
+
+
+
+ 
     
     unless ( $uniq_key && defined $receipt_ts && scalar @actionsId){
         my $res = $self->{ req }->new_response( 400 );
