@@ -37,6 +37,7 @@ my $app = sub {
         my $answer= holdout($request);
             
         my $res = $request->new_response( 200 );
+        $res->headers([ 'Content-Type' => 'application/json' ]);
         $res->body( encode_json($answer) );
         return $res->finalize();
     }
