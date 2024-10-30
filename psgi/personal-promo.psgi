@@ -321,6 +321,8 @@ sub bind_cart_card
 
     my $dbh = $self->{ dbh };
 
+    $dbh->do("delete from ia_cart_card where cart=? and card_number=?",undef,$cart,$cardNumber);
+
     my $sql = "INSERT INTO ia_cart_card
                    (cart, card_number, action_id)
                    VALUES ";
