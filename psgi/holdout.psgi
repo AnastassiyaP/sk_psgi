@@ -18,8 +18,8 @@ use DBI;
 use Carp;
 use JSON::XS;
 use SFE::Logger::Stderr2;
+use Const qw(IA_SHOP_ID STATUS_OK STATUS_INVALID);
 
-use constant IA_SHOP_ID => 10 ** 6; # интернет аптека;
 my $CFG = require "$dir/unit-app.conf";
 
 SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'debug' );
@@ -74,36 +74,50 @@ sub holdout
     
     my $answer = { "cartId" => $cart,
                    "coupon" => $coupon,
-                   "status" => "invalid" };
+                   "status" => STATUS_INVALID
+                };
     $coupon && $cart
         or return $answer;
         
-    my $action_ids = $dbh->selectcol_arrayref( "SELECT action_id
-                   FROM ia_cart_card
-                   WHERE
-                           cart = ?
-                       AND card_number = ?
-                       AND timestamp = (select max(timestamp) from ia_cart_card where cart=? and card_number=?)",
-                       {Columns=>[1]},
-                       $cart, $coupon, $cart, $coupon )
+    my $action_ids = $dbh->selectcol_arrayref( "
+            SELECT action_id
+            FROM ia_cart_card
+            WHERE cart = ?
+              AND card_number = ?
+              AND timestamp = (
+                 SELECT max(timestamp)
+                 FROM ia_cart_card
+                 WHERE cart = ?
+                   AND card_number = ?)",
+            {Columns => [1]},
+            $cart, $coupon, $cart, $coupon )
         or return $answer;
 
     
-    my $qmarks = join(',',("?") x scalar @$action_ids);
-    my $act_cnt = $dbh->selectrow_array( "select COUNT(*) from `card_action`
-                                        join action_status on card_action.action_id=action_status.action_id
-         where (disc_count < disc_count_limit  or disc_count_limit = 0)
-         AND `action_status`.status = 'run'
-         AND start_date <= NOW()
-         AND NOW() < end_date
-         AND card_number = ?
-         AND card_action.action_id in($qmarks)",
+    my $qmarks = join(',',("?") x @$action_ids);
+    my $valid_acts = $dbh->selectcol_arrayref( "
+        SELECT card_action.action_id
+        FROM card_action
+        JOIN action_status ON card_action.action_id=action_status.action_id
+        WHERE card_number = ?
+          AND card_action.action_id in($qmarks)
+          AND action_status.status = 'run'
+          AND start_date <= NOW()
+          AND NOW() < end_date
+          AND ( disc_count < disc_count_limit
+             OR disc_count_limit = 0)
+          ",
          undef,
          ($coupon, @$action_ids)
     );
     
-    Debugf( "cart action ids: %s, valid acts cnt: %s", $action_ids, $act_cnt);
-    ($act_cnt == scalar @$action_ids)
+    my $valid_act_cnt = scalar @$valid_acts;
+    Infof( "cart action cnt: %s, ids: %s, valid acts cnt: %s, ids: %s",
+          scalar @$action_ids,
+          $action_ids,
+          scalar @$valid_acts,
+          $valid_acts);
+    (scalar @$valid_acts == scalar @$action_ids)
         or return $answer;
 
     $dbh->do(
@@ -114,7 +128,7 @@ sub holdout
         undef, $coupon, @$action_ids
     );
     
-    $answer->{status} = 'ok';
+    $answer->{status} = STATUS_OK;
     return $answer;
 }
 ################################################################################
