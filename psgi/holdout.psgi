@@ -24,21 +24,22 @@ my $CFG = require "$dir/unit-app.conf";
 
 SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'debug' );
 
-
 my $app = sub {
     my $env = shift;
 
     my $request = Plack::Request->new( $env );
 
     my $method = $request->method();
-    if ( $method eq "POST" &&
-        $request->path_info() =~ m{/coupon-hold} )
+    if (
+        $method eq "POST" &&
+        $request->path_info() =~ m{/coupon-hold}
+        )
     {
-        my $answer= holdout($request);
-            
+        my $answer = holdout( $request );
+
         my $res = $request->new_response( 200 );
-        $res->headers([ 'Content-Type' => 'application/json' ]);
-        $res->body( encode_json($answer) );
+        $res->headers( [ 'Content-Type' => 'application/json' ] );
+        $res->body( encode_json( $answer ) );
         return $res->finalize();
     }
 
@@ -56,29 +57,31 @@ builder
 ################################################################################
 sub holdout
 {
-    my ($request) = @_;
+    my ( $request ) = @_;
+
     # TODO:
     # проверка карты по акции, а не купона
     # проверка что купон можно применить
     # проверка корзины в ia_cart_card
     # что делать с receiptTS и uniqKey
     #
-    
-    my $params =  decode_json($request->content);
-    
+
+    my $params = decode_json( $request->content );
+
     my $dbh = connect_db();
 
     #my $cardNumber = $params->{ cardNumber };
     my $coupon = $params->{ coupon };
     my $cart   = $params->{ cartId };
-    
-    my $answer = { "cartId" => $cart,
-                   "coupon" => $coupon,
-                   "status" => STATUS_INVALID
-                };
+
+    my $answer = {
+        "cartId" => $cart,
+        "coupon" => $coupon,
+        "status" => STATUS_INVALID
+    };
     $coupon && $cart
         or return $answer;
-        
+
     my $action_ids = $dbh->selectcol_arrayref( "
             SELECT action_id
             FROM ia_cart_card
@@ -89,12 +92,11 @@ sub holdout
                  FROM ia_cart_card
                  WHERE cart = ?
                    AND card_number = ?)",
-            {Columns => [1]},
-            $cart, $coupon, $cart, $coupon )
+        { Columns => [ 1 ] },
+        $cart, $coupon, $cart, $coupon )
         or return $answer;
 
-    
-    my $qmarks = join(',',("?") x @$action_ids);
+    my $qmarks     = join( ',', ( "?" ) x @$action_ids );
     my $valid_acts = $dbh->selectcol_arrayref( "
         SELECT card_action.action_id
         FROM card_action
@@ -107,17 +109,19 @@ sub holdout
           AND ( disc_count < disc_count_limit
              OR disc_count_limit = 0)
           ",
-         undef,
-         ($coupon, @$action_ids)
+        undef,
+        ( $coupon, @$action_ids )
     );
-    
+
     my $valid_act_cnt = scalar @$valid_acts;
-    Infof( "cart action cnt: %s, ids: %s, valid acts cnt: %s, ids: %s",
-          scalar @$action_ids,
-          $action_ids,
-          scalar @$valid_acts,
-          $valid_acts);
-    (scalar @$valid_acts == scalar @$action_ids)
+    Infof(
+        "cart action cnt: %s, ids: %s, valid acts cnt: %s, ids: %s",
+        scalar @$action_ids,
+        $action_ids,
+        scalar @$valid_acts,
+        $valid_acts
+    );
+    ( scalar @$valid_acts == scalar @$action_ids )
         or return $answer;
 
     $dbh->do(
@@ -127,8 +131,8 @@ sub holdout
                AND action_id in ($qmarks)",
         undef, $coupon, @$action_ids
     );
-    
-    $answer->{status} = STATUS_OK;
+
+    $answer->{ status } = STATUS_OK;
     return $answer;
 }
 ################################################################################
