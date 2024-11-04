@@ -17,6 +17,8 @@ CREATE TABLE `coupon` (
   `id` int unsigned NOT NULL  PRIMARY KEY COMMENT 'Номер купона',
   `code` varchar(256) NOT NULL DEFAULT '0' COMMENT 'Номер карты, купона или промокод',
   `action_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Номер акции',
+  `start_date` datetime DEFAULT NULL COMMENT 'Время старта акции',
+  `end_date`   datetime DEFAULT NULL COMMENT 'Время окончания акции',
   `type` enum('card', 'coupon', 'promocode') COMMENT 'Ттип значения в поле code',
   `placeholders` text DEFAULT NULL  COMMENT 'JSON c плейсхолдерами для акций в формате {"NAME": "Александра"} или пустая строка',
   unique KEY (`code`, `action_id`,`type`),
@@ -25,27 +27,16 @@ CREATE TABLE `coupon` (
 
 
 CREATE TABLE `coupon_usage` (
-  `coupon_id`   int unsigned NOT NULL COMMENT 'Номер купона',
-  `card_number` int unsigned NOT NULL DEFAULT '0' COMMENT 'Номер карты',
-  `uniq_key`    varchar(256) NOT NULL COMMENT 'уникальный id запроса',
-  `shop_id`     int unsigned NOT NULL DEFAULT '0' COMMENT 'id магазина',
-  `receipt_ts`  timestamp NOT NULL COMMENT 'время события на кассе',
-  `timestamp`   timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`card_number`,`coupon_id`, `uniq_key`),
-  KEY (`shop_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-
-
-CREATE TABLE `ia_cart_card` (
-  `id`          INT UNSIGNED    NOT NULL AUTO_INCREMENT,
-  `cart`        CHAR(15)        NOT NULL DEFAULT '' COMMENT 'Номер корзины',
-  `coupon_id`   INT UNSIGNED NOT NULL DEFAULT '0' COMMENT 'Номер карты или купона',
+  `uniq_key`    varchar(256)    NOT NULL COMMENT 'уникальный id запроса - номер корзины или чека',
+  `shop_id`     int unsigned    NOT NULL DEFAULT '0' COMMENT 'id магазина',
+  `receipt_ts`  timestamp       NOT NULL COMMENT 'время события на кассе',
+  `coupon_id`   INT UNSIGNED    NOT NULL DEFAULT '0' COMMENT 'Номер карты или купона',
   `card_number` BIGINT UNSIGNED NOT NULL DEFAULT '0' COMMENT 'Номер карты или купона',
   `timestamp`   TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Время записи',
-  `status`      eum ('new', 'holdout', 'canceled', 'accepted' ) DEFAULT 'new',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `cart_card_number` (`cart`, `card_number`, `coupon_id`),
+  `status`      enum ('new', 'holdout', 'canceled', 'accepted' ) DEFAULT 'new',
+  PRIMARY KEY `key_card_number` (`uniq_key`, `card_number`, `coupon_id`),
   KEY `card_number` (`card_number`)
+  KEY (`shop_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
@@ -95,7 +86,7 @@ select card_number from ia_cart_card where coupon_id=$coupon_id and cart=$cart;
 
    SELECT coupon.*
    from coupon c
-   join action_v2 a on c.action_id=a.id
+   join actions_v2 a on c.action_id=a.id
    
    where c.code=$coupon
     AND a.status = 'run'
