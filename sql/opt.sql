@@ -27,11 +27,11 @@ CREATE TABLE `coupon` (
 
 
 CREATE TABLE `coupon_usage` (
-  `uniq_key`    varchar(256)    NOT NULL COMMENT 'уникальный id запроса - номер корзины или чека',
-  `shop_id`     int unsigned    NOT NULL DEFAULT '0' COMMENT 'id магазина',
-  `receipt_ts`  timestamp       NOT NULL COMMENT 'время события на кассе',
   `coupon_id`   INT UNSIGNED    NOT NULL DEFAULT '0' COMMENT 'Номер карты или купона',
   `card_number` BIGINT UNSIGNED NOT NULL DEFAULT '0' COMMENT 'Номер карты или купона',
+  `uniq_key`    varchar(256)    NOT NULL COMMENT 'уникальный id запроса - номер корзины или чека',
+  `shop_id`     int unsigned    NOT NULL DEFAULT '0' COMMENT 'id магазина',
+  `receipt_ts`  timestamp       DEFAULT NULL COMMENT 'время события на кассе',
   `timestamp`   TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Время записи',
   `status`      enum ('new', 'holdout', 'canceled', 'accepted' ) DEFAULT 'new',
   PRIMARY KEY `key_card_number` (`uniq_key`, `card_number`, `coupon_id`),
@@ -40,7 +40,7 @@ CREATE TABLE `coupon_usage` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
--- Акция по Купону
+-- Акция по Купону. Даты в actions_v2, привязки к картам нет.
 insert into actions_v2
          (id,status,type,   start_date,  end_date,   `limit`,action_body,options,addr,bmp_fld)
   values (1,'run',  'coupon','2024-01-01','2030-01-01',5,'{}',NULL,'{}','asdf');
@@ -48,40 +48,58 @@ insert into coupon (id,code,action_id,type,placeholders) values (1,'121',1,'coup
 insert into coupon (id,code,action_id,type,placeholders) values (2,'122',1,'coupon','{}');
 insert into coupon (id,code,action_id,type,placeholders) values (3,'123',1,'coupon','{}');
 
-insert into ia_cart_card (id,coupon_id,card_number,cart) values (1,1,5464,'cart45424');
-insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status) values (1,5464,'receipt1',1,'2024-10-10','holdout');
-insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status) values (2,5464,'receipt1',1,'2024-10-10','finished');
-insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status) values (1,0,'receipt2',1,'2024-10-10','finished');
+--применения  купона № 1 в интернет аптеке
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (1,0,'cart1', 1000000, null,'canceled');
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (1,0,'cart2', 1000000, null,'new');
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (1,0,'cart3', 1000000, null,'holdout');
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (1,0,'cart4', 1000000, null,'accepted');
+
+--применения  купона № 1 в магазине
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (1,0,'receipt1',1,'2024-10-10','accepted');
 
 
--- Акция по промокоду
+-- Акция по промокоду. Одно применение  на карту
 insert into actions_v2
          (id,status,type,   start_date,  end_date,   `limit`,action_body,options,addr,bmp_fld)
   values (2,'run',  'promocode','2024-01-01','2030-01-01',5,'{}',NULL,'{}','asdf');
 insert into coupon (id,code,action_id,type,placeholders) values (4,'vmeste2024',2,'promocode','{}');
 
 
-insert into ia_cart_card (id,coupon_id,card_number,cart) values (2,4,1234,'cart1232');
-insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status) values (2,1234,'receipt1432',1,'2024-10-10','holdout');
+
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (4,1234,'cart5',10000000,null,'holdout');
+
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+values (4,1235,'receipt2',1,'2024-10-10','accepted');
+
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+values (4,1236,'receipt3',1,'2024-10-10','accepted');
 
 
--- Акция по карте
+
+-- Акция по карте. Даты могут быть в coupon для карты
 
 insert into actions_v2
-         (id,status, type,   start_date,  end_date,   `limit`,action_body,options,addr,bmp_fld)
+         (id,status, type,   start_date,  end_date,   `limit`, action_body,options,addr,bmp_fld)
   values (3,'run', 'card','2024-01-01','2030-01-01',5,'{}',NULL,'{}','asdf');
 insert into coupon (id,code,action_id,type,placeholders) values (5,'5464',3,'card','{}');
 insert into coupon (id,code,action_id,type,placeholders) values (6,'5465',3,'card','{}');
 insert into coupon (id,code,action_id,type,placeholders) values (7,'5466',3,'card','{}');
 
 
-insert into ia_cart_card (id,coupon_id,card_number,cart) values (3,5,5464,'cart3');
-insert into coupon_usage (coupon_id, card_number, uniq_key, shop_id, receipt_ts, status) values (5,5464, 'receipt11432', 1, '2024-10-10', 'holdout');
-insert into coupon_usage (coupon_id, card_number, uniq_key, shop_id, receipt_ts, status) values (6,5464, 'receipt11432', 1, '2024-10-10', 'holdout');
+insert into coupon_usage (coupon_id, card_number, uniq_key, shop_id, receipt_ts, status)
+values (5, 5464, 'cart6', 1, '2024-10-10', 'new');
+insert into coupon_usage (coupon_id, card_number, uniq_key, shop_id, receipt_ts, status)
+values (6, 5465, 'receipt4', 1, '2024-10-10', 'accepted');
 
 
 -- запросы
-карта по купону и корзине
+--карта по купону и корзине
 select card_number from ia_cart_card where coupon_id=$coupon_id and cart=$cart;
 
    SELECT coupon.*
@@ -98,6 +116,9 @@ select card_number from ia_cart_card where coupon_id=$coupon_id and cart=$cart;
 select count(*) from coupon_usage
 where coupon_id = $coupon_id
 and status in('holdout','accepted')
+
+
+-- количество использований с этой картой
 
 select count(*) from coupon_usage
 where coupon_id = $coupon_id
