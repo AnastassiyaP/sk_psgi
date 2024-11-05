@@ -1,6 +1,7 @@
 use 5.14.0;
 use strict;
 use warnings;
+use utf8;
 
 my $dir;
 
@@ -37,9 +38,12 @@ my $app = sub {
     {
         my $answer = holdout( $request );
 
-        my $res = $request->new_response( 200 );
+        my $code = exists $answer->{ error } ? 400 : 200;
+
+        my $res = $request->new_response( $code );
         $res->headers( [ 'Content-Type' => 'application/json' ] );
         $res->body( encode_json( $answer ) );
+
         return $res->finalize();
     }
 
@@ -59,28 +63,32 @@ sub holdout
 {
     my ( $request ) = @_;
 
-    # TODO:
-    # проверка карты по акции, а не купона
-    # проверка что купон можно применить
-    # проверка корзины в ia_cart_card
-    # что делать с receiptTS и uniqKey
-    #
-
     my $params = decode_json( $request->content );
 
     my $dbh = connect_db();
 
-    #my $cardNumber = $params->{ cardNumber };
-    my $coupon = $params->{ coupon };
-    my $cart   = $params->{ cartId };
+    my $loyaltyCard = $params->{ loyaltyCard };
+    my $coupon      = $params->{ coupon };
+    my $cart        = $params->{ cartId };
 
     my $answer = {
-        "cartId" => $cart,
-        "coupon" => $coupon,
-        "status" => STATUS_INVALID
+        "cartId"      => $cart,
+        "coupon"      => $coupon,
+        "loyaltyCard" => $loyaltyCard,
+        "status"      => STATUS_OK
     };
-    $coupon && $cart
-        or return $answer;
+    if ( $coupon && $coupon !~ /^\d{0,13}$/ ) {
+        Infof( "Holdout for text or long $coupon" );
+        return $answer;
+    }
+
+    $answer->{ status } = STATUS_INVALID;
+
+    my $cardNumber = $coupon // $loyaltyCard;
+
+    $cardNumber && $cart
+        or return
+        { "error" => "cartId - обязательно. Одно из полей coupon или loyaltyCard - обязательно" };
 
     my $action_ids = $dbh->selectcol_arrayref( "
             SELECT action_id
@@ -93,7 +101,9 @@ sub holdout
                  WHERE cart = ?
                    AND card_number = ?)",
         { Columns => [ 1 ] },
-        $cart, $coupon, $cart, $coupon )
+        $cart, $cardNumber, $cart, $cardNumber );
+
+    scalar @$action_ids
         or return $answer;
 
     my $qmarks     = join( ',', ( "?" ) x @$action_ids );
@@ -110,7 +120,7 @@ sub holdout
              OR disc_count_limit = 0)
           ",
         undef,
-        ( $coupon, @$action_ids )
+        ( $cardNumber, @$action_ids )
     );
 
     my $valid_act_cnt = scalar @$valid_acts;
@@ -129,9 +139,10 @@ sub holdout
              SET disc_count = disc_count + 1
              WHERE card_number = ?
                AND action_id in ($qmarks)",
-        undef, $coupon, @$action_ids
+        undef, $cardNumber, @$action_ids
     );
 
+    Info( "Coupon $cardNumber applied for cart $cart" );
     $answer->{ status } = STATUS_OK;
     return $answer;
 }
