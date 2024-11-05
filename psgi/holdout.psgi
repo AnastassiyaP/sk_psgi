@@ -110,12 +110,8 @@ sub holdout
     my $valid_acts = $dbh->selectcol_arrayref( "
         SELECT card_action.action_id
         FROM card_action
-        JOIN action_status ON card_action.action_id=action_status.action_id
         WHERE card_number = ?
           AND card_action.action_id in($qmarks)
-          AND action_status.status = 'run'
-          AND start_date <= NOW()
-          AND NOW() < end_date
           AND ( disc_count < disc_count_limit
              OR disc_count_limit = 0)
           ",
