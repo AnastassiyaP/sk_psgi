@@ -19,7 +19,7 @@ use DBI;
 use Carp;
 use JSON::XS;
 use SFE::Logger::Stderr2;
-use Const qw(IA_SHOP_ID STATUS_OK STATUS_INVALID);
+use Const;
 
 my $CFG = require "$dir/unit-app.conf";
 
@@ -75,70 +75,81 @@ sub holdout
         "cartId"      => $cart,
         "coupon"      => $coupon,
         "loyaltyCard" => $loyaltyCard,
-        "status"      => STATUS_OK
+        "status"      => STATUS_INVALID
     };
-    if ( $coupon && $coupon !~ /^\d{0,13}$/ ) {
-        Infof( "Holdout for text or long $coupon" );
-        return $answer;
-    }
+    
+    my $cardNumber = $loyaltyCard;
 
-    $answer->{ status } = STATUS_INVALID;
-
-    my $cardNumber = $coupon // $loyaltyCard;
-
-    $cardNumber && $cart
+    ($cardNumber // defined $coupon ) && $cart
         or return
         { "error" => "cartId - обязательно. Одно из полей coupon или loyaltyCard - обязательно" };
+        
+    $cardNumber //= 0;
+    $coupon //= 0;
+    
+    my $usages = $dbh->selectall_arrayref( "
+        SELECT us.id as usage_id,
+                us.coupon_id,
+                us.status,
+                a.limit,
+                a.type,
+                NOW() AS now_date,
+                (
+                    SELECT count(*)
+                    FROM coupon_usage
+                    WHERE coupon_id = c.id
+                      AND coupon_usage.status in('holdout','accepted')
+                ) AS usage_cnt,
+                (
+                    SELECT count(*)
+                    FROM coupon_usage
+                    WHERE coupon_id = c.id
+                      AND coupon_usage.status in('holdout','accepted')
+                      AND coupon_usage.card_number = ?
+                ) AS usage_cnt_card
 
-    my $action_ids = $dbh->selectcol_arrayref( "
-            SELECT action_id
-            FROM ia_cart_card
-            WHERE cart = ?
-              AND card_number = ?
-              AND timestamp = (
-                 SELECT max(timestamp)
-                 FROM ia_cart_card
-                 WHERE cart = ?
-                   AND card_number = ?)",
-        { Columns => [ 1 ] },
-        $cart, $cardNumber, $cart, $cardNumber );
-
-    scalar @$action_ids
-        or return $answer;
-
-    my $qmarks     = join( ',', ( "?" ) x @$action_ids );
-    my $valid_acts = $dbh->selectcol_arrayref( "
-        SELECT card_action.action_id
-        FROM card_action
-        WHERE card_number = ?
-          AND card_action.action_id in($qmarks)
-          AND ( disc_count < disc_count_limit
-             OR disc_count_limit = 0)
-          ",
-        undef,
-        ( $cardNumber, @$action_ids )
+        FROM coupon_usage us
+        JOIN coupon     c ON c.id = coupon_id
+        JOIN actions_v2 a ON a.id = c.action_id 
+        WHERE uniq_key = ?",
+          { Slice => {} },
+          $cardNumber, $cart
     );
+    Errf("usages: %s ", $usages);
+    foreach my $usage (@$usages) {
+        ($usage->{status} eq 'new')
+            or return $answer;
+            
+        if (
+            $usage->{type} =~ /^(?:coupon|promocode)$/ and
+            $usage->{limit} and
+            $usage->{limit} <= $usage->{usage_cnt}){
+            return $answer;
+        }
+        if (
+            $usage->{type} =~ /^(?:card|promocode)$/ and !$cardNumber ){
+            return $answer;
+        }
+        if ($usage->{type} eq 'card' and 
+            $usage->{limit} and $usage->{limit} <= $usage->{usage_cnt_card}){
+            return $answer;
+        }
+        if ($usage->{type} eq 'promocode' and
+                $usage->{usage_cnt_card}>0) {
+            return $answer;
+        }
+    }
 
-    my $valid_act_cnt = scalar @$valid_acts;
-    Infof(
-        "cart action cnt: %s, ids: %s, valid acts cnt: %s, ids: %s",
-        scalar @$action_ids,
-        $action_ids,
-        scalar @$valid_acts,
-        $valid_acts
-    );
-    ( scalar @$valid_acts == scalar @$action_ids )
-        or return $answer;
-
+    my $qmarks = join( ',', ( "?" ) x @$usages );
     $dbh->do(
-        "UPDATE `card_action`
-             SET disc_count = disc_count + 1
-             WHERE card_number = ?
-               AND action_id in ($qmarks)",
-        undef, $cardNumber, @$action_ids
+        "UPDATE `coupon_usage`
+             SET status = 'holdout'
+             WHERE id in ($qmarks)",
+        undef, map {$_->{usage_id}} @$usages
     );
 
-    Info( "Coupon $cardNumber applied for cart $cart" );
+
+    Info("$cardNumber applied for cart $cart");
     $answer->{ status } = STATUS_OK;
     return $answer;
 }

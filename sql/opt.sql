@@ -1,7 +1,13 @@
+--TODO
+--receipt_ts – для ИА – null?
+--type в actions – какие бывают и что значат?
+-- синхронизация корзины вместо затирания
+-- вернуть информацию об
+
 CREATE TABLE `actions_v2` (
   `id`         int unsigned NOT NULL DEFAULT '0' COMMENT 'id акции',
-  `status`     enum('run','stop','draft') NOT NULL DEFAULT 'draft',
-  `type`       varchar(255) NOT NULL COMMENT 'Тип акции. К примеру, coupon',
+  `status`     enum('run', 'stop', 'draft') NOT NULL DEFAULT 'draft',
+  `type`       varchar(255) NOT NULL COMMENT 'Тип акции. coupon, card, promocode',
   `start_date` datetime DEFAULT NULL COMMENT 'Время старта акции',
   `end_date`   datetime DEFAULT NULL COMMENT 'Время окончания акции',
   `limit`      int unsigned NOT NULL DEFAULT '0' COMMENT 'Количество применений купона. 0 – Безлимитно', 
@@ -14,28 +20,29 @@ CREATE TABLE `actions_v2` (
 
 
 CREATE TABLE `coupon` (
-  `id` int unsigned NOT NULL PRIMARY KEY AUTO_INCREMENT COMMENT 'ID купона',
+  `id` INT UNSIGNED NOT NULL PRIMARY KEY AUTO_INCREMENT COMMENT 'ID купона',
   `code` varchar(256) NOT NULL DEFAULT '0' COMMENT 'Номер карты, купона или промокод',
   `action_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Номер акции',
   `start_date` datetime DEFAULT NULL COMMENT 'Время старта акции',
   `end_date`   datetime DEFAULT NULL COMMENT 'Время окончания акции',
-  `type` enum('card', 'coupon', 'promocode') NOT NULL COMMENT 'Ттип значения в поле code',
-  `placeholders` text DEFAULT NULL  COMMENT 'JSON c плейсхолдерами для акций в формате {"NAME": "Александра"} или пустая строка',
+  `placeholders` json DEFAULT NULL  COMMENT 'JSON c плейсхолдерами для акций в формате {"NAME": "Александра"} или пустая строка',
   unique KEY (`code`, `action_id`),
   KEY (`action_id`)
+
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
 CREATE TABLE `coupon_usage` (
-  `coupon_id`   INT UNSIGNED    NOT NULL DEFAULT '0' COMMENT 'Номер карты или купона',
-  `card_number` BIGINT UNSIGNED NOT NULL DEFAULT '0' COMMENT 'Номер карты или купона',
+  `id`          INT UNSIGNED NOT NULL PRIMARY KEY AUTO_INCREMENT COMMENT 'ID  погашения купона',
+  `coupon_id`   INT UNSIGNED    NOT NULL DEFAULT '0' COMMENT 'ID купона или связи карты и акции',
+  `card_number` BIGINT UNSIGNED NOT NULL DEFAULT '0' COMMENT 'Номер карты',
   `uniq_key`    varchar(256)    NOT NULL COMMENT 'уникальный id запроса - номер корзины или чека',
   `shop_id`     int unsigned    NOT NULL DEFAULT '0' COMMENT 'id магазина',
   `receipt_ts`  timestamp       DEFAULT NULL COMMENT 'время события на кассе',
   `timestamp`   TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Время записи',
   `status`      enum ('new', 'holdout', 'canceled', 'accepted' ) DEFAULT 'new',
-  PRIMARY KEY `key_card_number` (`uniq_key`, `card_number`, `coupon_id`),
-  KEY `card_number` (`card_number`)
+  UNIQUE KEY `key_card_number` (`uniq_key`, `card_number`, `coupon_id`),
+  KEY `card_number` (`card_number`),
   KEY (`shop_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
@@ -43,10 +50,10 @@ CREATE TABLE `coupon_usage` (
 -- Акция по Купону. Даты в actions_v2, привязки к картам нет.
 insert into actions_v2
          (id,status,type,   start_date,  end_date,   `limit`,action_body,options,addr,bmp_fld)
-  values (1,'run',  'coupon','2024-01-01','2030-01-01',5,'{}',NULL,'{}','asdf');
-insert into coupon (id,code,action_id,type,placeholders) values (1,'121',1,'coupon','{}');
-insert into coupon (id,code,action_id,type,placeholders) values (2,'122',1,'coupon','{}');
-insert into coupon (id,code,action_id,type,placeholders) values (3,'123',1,'coupon','{}');
+  values (1,'run',  'coupon','2024-01-01','2030-01-01',5,'{"Купон  %%%COUPON_NUMBER%%% для карты %%%CARD_NUMBER%%% по акции %%%ACTION_ID%%% %%%START_DATE%%% %%%END_DATE%%%": "%%%COUPON_VAR%%%"}',NULL,'{}','asdf');
+insert into coupon (id,code,action_id,placeholders) values (1,'121',1,'{"COUPON_VAR":  1}');
+insert into coupon (id,code,action_id,placeholders) values (2,'122',1,'{"COUPON_VAR":  2}');
+insert into coupon (id,code,action_id,placeholders) values (3,'123',1,'{"COUPON_VAR":  3}');
 
 --применения  купона № 1 в интернет аптеке
 insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
@@ -66,8 +73,8 @@ insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,stat
 -- Акция по промокоду. Одно применение  на карту
 insert into actions_v2
          (id,status,type,   start_date,  end_date,   `limit`,action_body,options,addr,bmp_fld)
-  values (2,'run',  'promocode','2024-01-01','2030-01-01',5,'{}',NULL,'{}','asdf');
-insert into coupon (id,code,action_id,type,placeholders) values (4,'vmeste2024',2,'promocode','{}');
+  values (2,'run',  'promocode','2024-01-01','2030-01-01',2,'{"Промокод %%%COUPON_NUMBER%%% 2 применения на карту":"%%%CARD_NUMBER%%%"}',NULL,'{}','asdf');
+insert into coupon (id,code,action_id,placeholders) values (4,'vmeste2024',2,'{}');
 
 
 
@@ -86,10 +93,10 @@ values (4,1236,'receipt3',1,'2024-10-10','accepted');
 
 insert into actions_v2
          (id,status, type,   start_date,  end_date,   `limit`, action_body,options,addr,bmp_fld)
-  values (3,'run', 'card','2024-01-01','2030-01-01',5,'{}',NULL,'{}','asdf');
-insert into coupon (id,code,action_id,type,placeholders) values (5,'5464',3,'card','{}');
-insert into coupon (id,code,action_id,type,placeholders) values (6,'5465',3,'card','{}');
-insert into coupon (id,code,action_id,type,placeholders) values (7,'5466',3,'card','{}');
+  values (3,'run', 'card','2024-01-01','2030-01-01',1,'{"Акция по карте  %%%CARD_NUMBER%%% 1 применение на карту. Скидка 5%":"Привет %%%NAME%%%"}',NULL,'{}','asdf');
+insert into coupon (id, code, action_id, placeholders) values (6,'5465',3,'{"NAME": "Петров Б."}');
+insert into coupon (id, code, action_id, placeholders) values (5,'5464',3,'{"NAME": "Иванов А."}');
+insert into coupon (id, code, action_id, placeholders) values (7,'5466',3,'{"NAME": "Сидоров В."}');
 
 
 insert into coupon_usage (coupon_id, card_number, uniq_key, shop_id, receipt_ts, status)
@@ -115,7 +122,7 @@ select card_number from ia_cart_card where coupon_id=$coupon_id and cart=$cart;
 -- количество использований вообще
 select count(*) from coupon_usage
 where coupon_id = $coupon_id
-and status in('holdout','accepted')
+and status in('holdout', 'accepted')
 
 
 -- количество использований с этой картой
