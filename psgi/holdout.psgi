@@ -8,20 +8,20 @@ my $dir;
 BEGIN
 {
     $dir = $0;
-    $dir =~ s{/[^/]+$}{};
+    $dir =~ s{/psgi/[^/]+$}{};
 }
-
-use lib 'lib', "$dir/lib", "lib/perl";
+use lib "$dir/lib", "$dir/conf", "$dir/lib/perl";
 
 use Plack::Builder;
 use Plack::Request;
+
 use DBI;
 use Carp;
 use JSON::XS;
 use SFE::Logger::Stderr2;
 use Const;
 
-my $CFG = require "$dir/unit-app.conf";
+my $CFG = require "unit-app.conf";
 
 SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'debug' );
 
@@ -116,6 +116,8 @@ sub holdout
           $cardNumber, $cart
     );
     Errf("usages: %s ", $usages);
+    scalar @$usages
+        or return $answer;
     foreach my $usage (@$usages) {
         ($usage->{status} eq 'new')
             or return $answer;
