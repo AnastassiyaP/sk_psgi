@@ -147,9 +147,11 @@ $answer->{status} = 'invalid';
 
 $res    = $test->request( POST "/coupon-hold", Header => $header, Content => encode_json( $data ) );
 is_deeply( decode_json( $res->content ), $answer, "Promocode hold out of limit not succeed" );
+#TODO: проверить статус
 
 
-#Расхолдирование
+########################################################################
+###### Расхолдирование #################################################
 
 ### Unhold по купону
 
@@ -165,13 +167,19 @@ $res = $test->request(
 
 $answer = { "error" => "Одно из полей coupon или loyaltyCard - обязательно" };
 
-is_deeply( decode_json( $res->content ), $answer, "Error in params" );
+is_deeply( decode_json( $res->content ), $answer, "Unhold: Error in params" );
 
-#invalid
+
+## Без cart:
+
 $data = {
-    "cartId"      => 1,
-    "loyaltyCard" => 1234,
-    "coupon"      => 995897
+    "coupon"      => 122
+};
+$answer = {
+    "cartId"      => undef,
+    "coupon"      => 122,
+    "loyaltyCard" => undef,
+    "status"      => "ok"
 };
 
 $res = $test->request(
@@ -180,116 +188,92 @@ $res = $test->request(
     Content => encode_json( $data )
 );
 
-$answer = {
-    "cartId"      => 1,
-    "coupon"      => 995897,
-    "loyaltyCard" => 1234,
-    "status"      => "invalid",
+is_deeply( decode_json( $res->content ), $answer, "Unhold without cart succeed " );
+
+#Две корзины c holdout и card_number=0 для одного купона 
+$data = {
+    "coupon"      => 123
 };
-#
-#is_deeply( decode_json( $res->content ), $answer, "Coupon unhold not succeed" );
-#
-##ok
-#$data->{ "cartId" } = 2;
-#
-#$res = $test->request(
-#    POST "/coupon-unhold",
-#    Header  => $header,
-#    Content => encode_json( $data )
-#);
-#
-#$answer = {
-#    "cartId"      => 2,
-#    "coupon"      => 995897,
-#    "loyaltyCard" => 1234,
-#    "status"      => "ok",
-#    'actions'     => [
-#        {
-#            'action_id'        => 4,
-#            'disc_count'       => 0,
-#            'status'           => 'ok',
-#            'coupon'           => '995897',
-#            'comment'          => "\x{41a}\x{43e}\x{43c}\x{43c}\x{435}\x{43d}\x{442} \x{43f}\x{440}\x{43e} \x{430}\x{43a}\x{446}\x{438}\x{44e} 4",
-#            'disc_count_limit' => 1,
-#            'cart'             => '2'
-#        }
-#    ],
-#};
-#
-#is_deeply( decode_json( $res->content ), $answer, "Coupon unhold succeed" );
-#%act_usages = map { $_->{ action_id } => $_->{ disc_count } } @{
-#    $dbh->selectall_arrayref(
-#        "select action_id, disc_count from card_action where card_number in(995897, 1234) ",
-#        { Slice => {} }
-#    )
-#};
-#
-##счетчик уменьшился только для акции 4
-#is_deeply(
-#    \%act_usages,
-#    {
-#        '2' => 1,
-#        '4' => 0,
-#        '1' => 1,
-#        '3' => 0
-#    },
-#    "action_id=4 counter decreased"
-#);
-#
-#### Unhold по карте и без корзины
-#delete $data->{ "cartId" };
-#delete $data->{ "coupon" };
-#
-#$res = $test->request(
-#    POST "/coupon-unhold",
-#    Header  => $header,
-#    Content => encode_json( $data )
-#);
-#
-#$answer = {
-#    "cartId"      => undef,
-#    "coupon"      => undef,
-#    "loyaltyCard" => 1234,
-#    "status"      => "ok",
-#    'actions'     => [
-#        {
-#            'disc_count'       => 0,
-#            'card_number'      => 1234,
-#            'disc_count_limit' => 1,
-#            'comment'          => undef,
-#            'action_id'        => 1,
-#            'status'           => 'ok',
-#            'cart'             => '2'
-#        },
-#        {
-#            'status'           => 'invalid',
-#            'cart'             => '2',
-#            'comment'          => undef,
-#            'card_number'      => 1234,
-#            'disc_count_limit' => 2,
-#            'disc_count'       => 1,
-#            'action_id'        => 2
-#        }
-#    ]
-#};
-#
-#is_deeply( decode_json( $res->content ), $answer, "Card unhold succeed" );
-#
-#%act_usages = map { $_->{ action_id } => $_->{ disc_count } } @{
-#    $dbh->selectall_arrayref(
-#        "select action_id, disc_count from card_action where card_number =1234 ",
-#        { Slice => {} }
-#    )
-#};
-#
-#is_deeply(
-#    \%act_usages,
-#    {
-#        '2' => 1,
-#        '1' => 0,
-#        '3' => 0
-#    },
-#    "action_id (2) counter not decreased"
-#);
+$answer = {
+    "error" => "Захолдиновано несколько купонов, не удается выбрать корзину" };
+
+$res = $test->request(
+    POST "/coupon-unhold",
+    Header  => $header,
+    Content => encode_json( $data )
+);
+
+is_deeply( decode_json( $res->content ), $answer, "Unhold without cart unsucceed when two carts holded" );
+
+
+#invalid
+$data = {
+    "cartId"      => 1, #wrong
+    "loyaltyCard" => 5464,
+    "coupon"      => 121
+};
+
+$res = $test->request(
+    POST "/coupon-unhold",
+    Header  => $header,
+    Content => encode_json( $data )
+);
+
+$answer =  {%$data};
+$answer->{status}='invalid';
+
+is_deeply( decode_json( $res->content ), $answer, "Coupon unhold not succeed" );
+
+#TODO нужны тесты:
+# неуспешно-  когда передана неверная карта для промокода или 
+
+
+
+#ok
+$data->{ "cartId" }      = 'cart1';
+$answer = {%$data};
+
+$res = $test->request(
+    POST "/coupon-unhold",
+    Header  => $header,
+    Content => encode_json( $data )
+);
+
+$answer->{status} = 'ok';
+
+is_deeply( decode_json( $res->content ), $answer, "Coupon unhold succeed" );
+#TODO: check status
+
+
+# промокоды
+
+$data = {
+    "cartId"      => 'cart5', #wrong
+    #"loyaltyCard" => 1222,
+    "coupon"      => "vmeste2024"
+};
+
+$answer = {%$data};
+$answer->{loyaltyCard} = undef;
+$answer->{status} = 'invalid';
+
+$res = $test->request(
+    POST "/coupon-unhold",
+    Header  => $header,
+    Content => encode_json( $data )
+);
+is_deeply( decode_json( $res->content ), $answer, "Promocode unhold unsucceed with unknown card" );
+
+
+$data->{loyaltyCard}= 1233;
+$answer->{loyaltyCard}= 1233;
+$answer->{status} = 'ok';
+
+$res = $test->request(
+    POST "/coupon-unhold",
+    Header  => $header,
+    Content => encode_json( $data )
+);
+is_deeply( decode_json( $res->content ), $answer, "Promocode unhold succeed" );
 
 done_testing;

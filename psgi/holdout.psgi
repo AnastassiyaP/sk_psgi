@@ -30,27 +30,30 @@ my $app = sub {
 
     my $request = Plack::Request->new( $env );
 
-    my $method = $request->method();
-    if (
-        $method eq "POST" &&
-        $request->path_info() =~ m{/coupon-hold}
-        )
-    {
-        my $answer = holdout( $request );
+    my $method    = $request->method();
+    my $path_info = $request->path_info();
+    my $res;
+    if ( $method eq "POST" ) {
+        my $answer = $path_info =~ m{/coupon-hold$}
+            ? holdout( $request )
+            : $path_info =~ m{/coupon-unhold$}
+            ? unhold( $request )
+            : undef;
 
+        unless ( defined $answer ) {
+            Warning( "Unknown path_info[$path_info]" );
+            return not_found( $request );
+        }
         my $code = exists $answer->{ error } ? 400 : 200;
 
-        my $res = $request->new_response( $code );
+        $res = $request->new_response( $code );
         $res->headers( [ 'Content-Type' => 'application/json' ] );
         $res->body( encode_json( $answer ) );
-
         return $res->finalize();
     }
+    Warning( "Unknown method[$method] path_info[$path_info]" );
 
-    Warning( "Unknown method[$method]" );
-
-    my $res = $request->new_response( 404 );
-    return $res->finalize();
+    return not_found( $request );
 };
 
 builder
@@ -115,9 +118,11 @@ sub holdout
           { Slice => {} },
           $cardNumber, $cart
     );
-    Errf("usages: %s ", $usages);
     scalar @$usages
         or return $answer;
+    # промокод - 2 лимита: 1 применение по карте и общий лимит на к-во карт
+    # купон - Лимит применений без привязки к карте
+    # карта - лимит на карту
     foreach my $usage (@$usages) {
         ($usage->{status} eq 'new')
             or return $answer;
@@ -129,15 +134,15 @@ sub holdout
             return $answer;
         }
         if (
-            $usage->{type} =~ /^(?:card|promocode)$/ and !$cardNumber ){
+            $usage->{type} =~ /^(?:card|promocode)$/
+                and !$cardNumber ){
             return $answer;
         }
         if ($usage->{type} eq 'card' and 
             $usage->{limit} and $usage->{limit} <= $usage->{usage_cnt_card}){
             return $answer;
         }
-        if ($usage->{type} eq 'promocode' and
-                $usage->{usage_cnt_card}>0) {
+        if ($usage->{type} eq 'promocode' and  $usage->{usage_cnt_card}>0) {
             return $answer;
         }
     }
@@ -153,6 +158,116 @@ sub holdout
 
     Info("$cardNumber applied for cart $cart");
     $answer->{ status } = STATUS_OK;
+    return $answer;
+}
+################################################################################
+sub unhold
+{
+    my ( $request ) = @_;
+    my $params;
+    eval {
+        $params = decode_json( $request->content );
+    } or return { "error" => "Malformed JSON string" };
+    my $dbh = connect_db();
+
+    my $cart        = $params->{ cartId };
+    my $loyaltyCard = $params->{ loyaltyCard };
+    my $coupon      = $params->{ coupon };
+
+    my $cardNumber = $loyaltyCard;
+
+    ($cardNumber // defined $coupon )
+        or return { "error" => "Одно из полей coupon или loyaltyCard - обязательно" };
+
+
+    my $answer = {
+        "cartId"      => $cart,
+        "coupon"      => $coupon,
+        "loyaltyCard" => $loyaltyCard,
+        "status"      => STATUS_INVALID
+    };
+
+    
+    $cardNumber //= 0;
+    unless ( defined $cart) {
+        my $code = defined $coupon ? $coupon : $cardNumber; 
+        my $carts = $dbh->selectall_arrayref("
+             SELECT uniq_key 
+             FROM coupon_usage us 
+             JOIN coupon     c ON c.id = coupon_id
+             JOIN actions_v2 a ON a.id = c.action_id 
+             WHERE code = ?
+               AND us.status='holdout'
+               AND card_number = ?
+            LIMIT 2
+             ",
+             {Slice=>{}},
+             $code, $cardNumber);
+
+        scalar @$carts or return $answer;
+        if (scalar @$carts > 1 ){
+            return {
+                "error"=> "Захолдиновано несколько купонов, не удается выбрать корзину"
+            }
+        }
+        $cart = $carts->[0]->{uniq_key};
+    }
+
+    my @code;
+    for my $code ($cardNumber, $coupon) {
+        if ( defined $code) {
+            push @code, $code;
+        }
+    }
+    my $qmarks = join(',', ('?') x @code);
+    my $usages = $dbh->selectall_arrayref( "
+        SELECT us.id as usage_id,
+                c.action_id,
+                us.coupon_id,
+                us.card_number,
+                c.code,
+                a.limit,
+                a.type                
+        FROM coupon_usage us
+        JOIN coupon     c ON c.id = coupon_id
+        JOIN actions_v2 a ON a.id = c.action_id 
+        WHERE uniq_key = ?
+        AND code in ($qmarks)
+        AND us.status='holdout'
+        ",
+          { Slice => {} },
+          $cart, @code
+    );
+    scalar @$usages
+        or return $answer;
+    
+    foreach my $usage (@$usages) {
+        if (
+            $usage->{type} =~ /^(?:card|promocode)$/
+            and !$cardNumber) {
+            return $answer;
+        }
+        if( $cardNumber != $usage->{card_number}) {
+            return $answer;
+        }
+    }
+
+    $qmarks = join( ',', ( "?" ) x @$usages );
+    $dbh->do(
+        "UPDATE `coupon_usage`
+             SET status = ?
+             WHERE id in ($qmarks)",
+        undef,
+        COUPON_STATUS_CANCELED,
+        map {$_->{usage_id}} @$usages
+    );
+
+    Infof( "Unholded actions %s with coupon %s, card_number %s",
+          (map {$_->{action_id}} @$usages),
+          $coupon,
+          $cardNumber );
+    
+    $answer->{ status }  = STATUS_OK;
     return $answer;
 }
 ################################################################################
