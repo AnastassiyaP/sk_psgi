@@ -22,19 +22,7 @@ use SFE::Logger::Stderr2;
 use ShopBrand qw(
     checkShopIdsByAddr
 );
-
-# ok      - Можно применять
-# fail    - не соблюдены условия промоакции
-# unknown - купон не зарегистрирован в SmartCheckout
-# expired - купон принадлежит завершившейся промоакции
-# invalid - купон был использован и погашен ранее
-#
-use constant STATUS_OK      => 'ok';
-use constant STATUS_FAIL    => 'fail';
-use constant STATUS_UNKNOWN => 'unknown';
-use constant STATUS_EXPIRED => 'expired';
-use constant STATUS_INVALID => 'invalid';
-use constant IA_SHOP_ID => 10 ** 6;
+use Const;
 
 my $CFG = require "$dir/unit-app.conf";
 
@@ -42,9 +30,21 @@ SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'warning' );
 
 
 #список работающих акций по cardNumber или code
-# card - лимит на карту
-# coupon - лимит на купон без учета карты 
-#TODO: promocode - лимит не на карту, а на количество карт 
+
+# промокод - 2 лимита: 1 применение по карте и общий лимит на к-во карт
+# купон - Лимит применений без привязки к карте
+# карта - лимит на картуапи я
+
+#TODO:
+#тесты, имитирующие  старую версию
+# тесты для getAction_v2
+# put, put2 - отличаются только cardNumber, надо ли два метода
+
+# Вопросы Денису:
+# 1. putv2 - придумать удобные входные параметры
+# 2. Надо ли заполнять coupon_usage в getAction_v2 или достаточно нового метода с актуальными акциями
+# 3. Формат входных параметров bind_cart 
+
 my $SQL_actionByCardNumber_v2 = <<SQL;
 SELECT c.action_id,
     c.id as coupon_id,
@@ -354,14 +354,14 @@ sub getAction_v2
         }
     }
     $sth->finish();
-    if ( $res && $res->{ type } ne 'card' ) {
-        $cardNumber = 0; 
-    }
-
-    # Связываем корзину ИА, номер карты/купона и id акции
-    if ( $cart && @couponId ) {
-        $self->bind_cart_card( $cart, $cardNumber, \@couponId );
-    }
+    #if ( $res && $res->{ type } ne 'card' ) {
+    #    $cardNumber = 0; 
+    #}
+    #
+    ## Связываем корзину ИА, номер карты/купона и id акции
+    #if ( $cart && @couponId ) {
+    #    $self->bind_cart_card( $cart, $cardNumber, \@couponId );
+    #}
 
     my $response = $self->{ req }->new_response( 200 );
     $response->body( encode_json( \@answer ) );
@@ -411,6 +411,7 @@ sub prepareAction {
 #    start_date         "2024-03-18 00:00:00" (dualvar: 2024),
 #    status             "run"
 
+#TODO добавить условие про карту для промокода 
 sub couponStatus {
     my $self = shift;
     my $arg  = shift;
@@ -496,10 +497,6 @@ sub put_v2
     my $self = shift;
     my $dbh  = $self->{ dbh };
 
-    # В транзакции делать попытку внести uniqKey в отдельную таблицу.
-    # Если получилось, то обновлять акции
-    # $data->{uniqKey}
-    #    my $params = $arg->{req}->parameters;
     my $params = $self->{ params };
     
     my $uniq_key = $params->{uniqKey};
@@ -533,10 +530,6 @@ sub put
     my $self = shift;
     my $dbh  = $self->{ dbh };
 
-    # В транзакции делать попытку внести uniqKey в отдельную таблицу.
-    # Если получилось, то обновлять акции
-    # $data->{uniqKey}
-    #    my $params = $arg->{req}->parameters;
     my $params = $self->{ params };
     
     my $uniq_key = $params->{uniqKey};
@@ -564,6 +557,14 @@ sub put
     return $res->finalize();
 }
 
+#TODO
+sub bind_user_cart_card{
+    cartId, UsedActionIds
+    my $cardNumber = $params->{ cardNumber };#карта
+    my $cart       = $params->{ cart };
+    my @couponCode     = $params->get_all( "coupon" );
+     
+}
 ################################################################################
 sub check_addr {
     my $self     = shift;

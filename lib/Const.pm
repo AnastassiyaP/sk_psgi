@@ -7,8 +7,11 @@ use base 'Exporter';
 
 use constant IA_SHOP_ID => 10**6;    # интернет аптека;
 
-use constant STATUS_OK      => 'ok';
-use constant STATUS_INVALID => 'invalid';
+use constant STATUS_OK      => 'ok'; # Можно применять ;
+use constant STATUS_FAIL    => 'fail'; # Не соблюдены условия промоакции;
+use constant STATUS_UNKNOWN => 'unknown'; # купон не зарегистрирован в SmartCheckout
+use constant STATUS_EXPIRED => 'expired'; # Купон принадлежит завершившейся промоакции
+use constant STATUS_INVALID => 'invalid'; # Купон был использован и погашен ранее
 
 use constant COUPON_STATUS_NEW => 'new';
 use constant COUPON_STATUS_HOLDOUT => 'holdout';
