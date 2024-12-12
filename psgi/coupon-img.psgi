@@ -8,7 +8,7 @@ BEGIN
     $dir =~ s{/[^/]+$}{};
 }
 
-use lib 'lib', "$dir/lib";
+use lib 'lib', "conf", "$dir/lib";
 
 use Plack::Builder;
 use Plack::Request;
@@ -22,7 +22,7 @@ use SmCh::Coupon::Generate qw(
 );
 
 
-my $CFG = require "$dir/unit-app.conf";
+my $CFG = require "unit-app.conf";
 
 #      AND start_date <= NOW()
 #      AND NOW() < end_date
@@ -31,13 +31,14 @@ my $SQL_actionByActionId = <<SQL;
     FROM `actions_v2`
     WHERE id = ?
       AND status = 'run'
+      AND type = 'coupon'
 SQL
 
 my $SQL_AddCouponAction = <<SQL;
     INSERT
-    INTO `card_action` (
+    INTO `coupon` (
         action_id,
-        card_number
+        code
     )
     VALUES (?, ?)
 SQL
@@ -68,7 +69,6 @@ sub get
 {
     my $arg = shift;
 
-    #my $params = $arg->{req}->parameters;
     my $params = $arg->{ req }->query_parameters;
 
     my $cmd      = $params->{ cmd };
