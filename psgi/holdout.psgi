@@ -155,8 +155,8 @@ sub holdout
         undef, map {$_->{usage_id}} @$usages
     );
 
-
     Info("$cardNumber applied for cart $cart");
+
     $answer->{ status } = STATUS_OK;
     return $answer;
 }
@@ -207,7 +207,7 @@ sub unhold
         scalar @$carts or return $answer;
         if (scalar @$carts > 1 ){
             return {
-                "error"=> "Захолдиновано несколько купонов, не удается выбрать корзину"
+                "error"=> "Захолдировано несколько купонов, не удается выбрать корзину"
             }
         }
         $cart = $carts->[0]->{uniq_key};

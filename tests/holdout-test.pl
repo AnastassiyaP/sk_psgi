@@ -43,12 +43,6 @@ sub prepare_db
     
 
     my $file = "$dir/sql/data.sql";
-    #open my $fh, "<", $file
-    #    or die "could not open $file: $!";
-    #while my $line (<$fh>){
-    #    if $line =~/^\w/
-    #    $dbh->do($_);
-    #}
     my $sql_data = do {
         local $/ = undef;
         open my $fh, "<", $file
@@ -64,21 +58,15 @@ my $app    = Plack::Util::load_psgi 'psgi/holdout.psgi';
 my $test   = Plack::Test->create( $app );
 my $header = [ 'Content-Type' => 'application/json; charset=UTF-8' ];
 
+my $uri = 'coupon-hold';
 ### Holdout 
 
 #error
 
 my $data = { "Unknown" => 1 };
-
-my $res = $test->request(
-    POST "/coupon-hold",
-    Header  => $header,
-    Content => encode_json( $data )
-);
-
 my $answer = { "error" => "cartId - обязательно. Одно из полей coupon или loyaltyCard - обязательно" };
 
-is_deeply( decode_json( $res->content ), $answer, "Error in params" );
+test_resp( $uri, $data, $answer, "Error in params"  );
 
 #invalid (wrong cartId)
 $data = {
@@ -86,21 +74,20 @@ $data = {
     "loyaltyCard" => 5464,
     "coupon"      => 121
 };
-$res                  = $test->request( POST "/coupon-hold", Header => $header, Content => encode_json( $data ) );
 $answer               = { %$data };
 $answer->{ "status" } = "invalid";
-is_deeply( decode_json( $res->content ), $answer, "Coupon hold not succeed" );
+
+test_resp( $uri, $data, $answer, "Coupon hold not succeed" );
 
 
 #  ok - Holdout по купону и карте
 $data->{ "cartId" }   = 'cart1';
-$res          = $test->request( POST "/coupon-hold", Header => $header, Content => encode_json( $data ) );
 
 $answer = {%$data};
 $answer->{"status"} = "ok";
 
+test_resp( $uri, $data, $answer, "Coupon hold succeed" );
 
-is_deeply( decode_json( $res->content ), $answer, "Coupon hold succeed" );
 my $cnt = $dbh->selectrow_array(
         "select count(*) from coupon_usage
         where uniq_key='cart1' and status='holdout' ",
@@ -116,37 +103,33 @@ $data = {
     #"loyaltyCard" => 1235,
     "coupon"      => 'vmeste2024'
 };
-$res    = $test->request( POST "/coupon-hold", Header => $header, Content => encode_json( $data ) );
 $answer = {
     "cartId"      => 'cart5',
     "coupon"      => 'vmeste2024',
     "loyaltyCard" => undef,
     "status"      => "invalid"
 };
-is_deeply( decode_json( $res->content ), $answer, "Promocode hold without card not succeed" );
+test_resp( $uri, $data, $answer, "Promocode hold without card not succeed" );
 
 ### Holdout по промокоду без карты
 $data->{loyaltyCard} = 1235;
 $answer->{loyaltyCard} = 1235;
 
-$res    = $test->request( POST "/coupon-hold", Header => $header, Content => encode_json( $data ) );
-is_deeply( decode_json( $res->content ), $answer, "Promocode hold wrong card not succeed" );
+test_resp( $uri, $data, $answer, "Promocode hold wrong card not succeed" );
 
 ### Holdout по промокоду успешный
 $data->{loyaltyCard} = 1233;
 $answer->{loyaltyCard} = 1233;
 $answer->{status} = 'ok';
 
-$res    = $test->request( POST "/coupon-hold", Header => $header, Content => encode_json( $data ) );
-is_deeply( decode_json( $res->content ), $answer, "Promocode hold succeed" );
+test_resp( $uri, $data, $answer, "Promocode hold succeed" );
 
 ### Holdout не прошел по лимиту
 $data->{loyaltyCard} = 1234;
 $answer->{loyaltyCard} = 1234;
 $answer->{status} = 'invalid';
 
-$res    = $test->request( POST "/coupon-hold", Header => $header, Content => encode_json( $data ) );
-is_deeply( decode_json( $res->content ), $answer, "Promocode hold out of limit not succeed" );
+test_resp( $uri, $data, $answer, "Promocode hold out of limit not succeed" );
 #TODO: проверить статус
 
 
@@ -154,27 +137,18 @@ is_deeply( decode_json( $res->content ), $answer, "Promocode hold out of limit n
 ###### Расхолдирование #################################################
 
 ### Unhold по купону
-
+$uri = '/coupon-unhold';
 #error
 
 $data = { "Unknown" => 1 };
-
-$res = $test->request(
-    POST "/coupon-unhold",
-    Header  => $header,
-    Content => encode_json( $data )
-);
-
 $answer = { "error" => "Одно из полей coupon или loyaltyCard - обязательно" };
 
-is_deeply( decode_json( $res->content ), $answer, "Unhold: Error in params" );
+test_resp( $uri, $data, $answer, "Unhold: Error in params " );
 
 
 ## Без cart:
 
-$data = {
-    "coupon"      => 122
-};
+$data = { "coupon" => 122 };
 $answer = {
     "cartId"      => undef,
     "coupon"      => 122,
@@ -182,28 +156,13 @@ $answer = {
     "status"      => "ok"
 };
 
-$res = $test->request(
-    POST "/coupon-unhold",
-    Header  => $header,
-    Content => encode_json( $data )
-);
-
-is_deeply( decode_json( $res->content ), $answer, "Unhold without cart succeed " );
+test_resp( $uri, $data, $answer, "Unhold without cart succeed " );
 
 #Две корзины c holdout и card_number=0 для одного купона 
-$data = {
-    "coupon"      => 123
-};
-$answer = {
-    "error" => "Захолдиновано несколько купонов, не удается выбрать корзину" };
+$data = {"coupon" =>  123 };
+$answer = { "error" => "Захолдировано несколько купонов, не удается выбрать корзину" };
 
-$res = $test->request(
-    POST "/coupon-unhold",
-    Header  => $header,
-    Content => encode_json( $data )
-);
-
-is_deeply( decode_json( $res->content ), $answer, "Unhold without cart unsucceed when two carts holded" );
+test_resp( $uri, $data, $answer, "Unhold without cart  not succeed when two carts holded" );
 
 
 #invalid
@@ -213,16 +172,10 @@ $data = {
     "coupon"      => 121
 };
 
-$res = $test->request(
-    POST "/coupon-unhold",
-    Header  => $header,
-    Content => encode_json( $data )
-);
-
 $answer =  {%$data};
 $answer->{status}='invalid';
 
-is_deeply( decode_json( $res->content ), $answer, "Coupon unhold not succeed" );
+test_resp( $uri, $data, $answer, "Coupon  unhold not succeed" );
 
 #TODO нужны тесты:
 # неуспешно-  когда передана неверная карта для промокода или 
@@ -232,24 +185,15 @@ is_deeply( decode_json( $res->content ), $answer, "Coupon unhold not succeed" );
 #ok
 $data->{ "cartId" }      = 'cart1';
 $answer = {%$data};
-
-$res = $test->request(
-    POST "/coupon-unhold",
-    Header  => $header,
-    Content => encode_json( $data )
-);
-
 $answer->{status} = 'ok';
 
-is_deeply( decode_json( $res->content ), $answer, "Coupon unhold succeed" );
+test_resp( $uri, $data, $answer, "Coupon  unhold succeed" );
 #TODO: check status
 
 
 # промокоды
-
 $data = {
     "cartId"      => 'cart5', #wrong
-    #"loyaltyCard" => 1222,
     "coupon"      => "vmeste2024"
 };
 
@@ -257,23 +201,27 @@ $answer = {%$data};
 $answer->{loyaltyCard} = undef;
 $answer->{status} = 'invalid';
 
-$res = $test->request(
-    POST "/coupon-unhold",
-    Header  => $header,
-    Content => encode_json( $data )
-);
-is_deeply( decode_json( $res->content ), $answer, "Promocode unhold unsucceed with unknown card" );
+test_resp( $uri, $data, $answer, "Promocode unhold unsucceed with unknown card" );
 
 
-$data->{loyaltyCard}= 1233;
-$answer->{loyaltyCard}= 1233;
+$data->{loyaltyCard} = 1233;
+$answer->{loyaltyCard} = 1233;
 $answer->{status} = 'ok';
 
-$res = $test->request(
-    POST "/coupon-unhold",
-    Header  => $header,
-    Content => encode_json( $data )
-);
-is_deeply( decode_json( $res->content ), $answer, "Promocode unhold succeed" );
+test_resp( $uri, $data, $answer, "Promocode unhold succeed" );
+
+
+
+sub test_resp {
+    my ($uri, $data, $answer, $text) = @_; 
+
+    my $res = $test->request(
+        POST $uri,
+        Header  => $header,
+        Content => encode_json($data)
+    );
+    
+    is_deeply( decode_json( $res->content ), $answer, $text );
+}
 
 done_testing;
