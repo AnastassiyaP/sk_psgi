@@ -1,7 +1,7 @@
 CREATE TABLE `actions_v2` (
   `id`         int unsigned NOT NULL DEFAULT '0' COMMENT 'id акции',
-  `status`     enum('run','stop','draft') NOT NULL DEFAULT 'draft',
-  `type`       varchar(255) NOT NULL COMMENT 'Тип акции. К примеру, coupon',
+  `status`     enum('run', 'stop', 'draft') NOT NULL DEFAULT 'draft',
+  `type`       varchar(255) NOT NULL COMMENT 'Тип акции. coupon, card, promocode',
   `start_date` datetime DEFAULT NULL COMMENT 'Время старта акции',
   `end_date`   datetime DEFAULT NULL COMMENT 'Время окончания акции',
   `limit`      int unsigned NOT NULL DEFAULT '0' COMMENT 'Количество применений купона. 0 – Безлимитно', 
