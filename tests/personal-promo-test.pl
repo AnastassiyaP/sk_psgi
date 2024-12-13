@@ -8,45 +8,27 @@ use strict;
 use warnings;
 use JSON;
 
+use lib 'conf', 'lib';
+
 use Plack::Test;
 use HTTP::Request::Common;
 use Plack::Util;
-use Test::More;
+use Test::More tests=>13;
 use Test::Deep;
-use DBI;
 
-my $dir = '.';
+use DB;
 
-BEGIN
-{
-    $dir = '.';
-}
-
-my $CFG = require "./conf/unit-app.conf";
-state $dbh;
-
-connect_db();
+my $CFG = do "unit-app.conf";
+my $dbh = connect_db($CFG, {mysql_multi_statements => 1});
 prepare_db();
-
-################################################################################
-sub connect_db
-{
-    $dbh //= DBI->connect_cached(
-        $CFG->{ sql_dsn }, $CFG->{ sql_user }, $CFG->{ sql_pass },
-        { RaiseError => 1, mysql_enable_utf8 => 1, mysql_multi_statements => 1, }
-    );
-    return $dbh;
-}
 
 sub prepare_db
 {
     $dbh->do( "Delete from actions_v2" );
     $dbh->do( "Delete from coupon" );
     $dbh->do( "Delete from coupon_usage" );
-    
 
-    my $file = "$dir/sql/data.sql";
-
+    my $file = "sql/data.sql";
     my $sql_data = do {
         local $/ = undef;
         open my $fh, "<", $file
@@ -213,13 +195,13 @@ is($cnt, 3, "Coupon usage added");
 
 ############# put v2 ###################
 
-my $res = $test->request(
+$res = $test->request(
     PUT '/v2?uniqKey=receipt11&cardNumber=5464&receiptTS=2024-10-10&couponId=1&couponId=4&couponId=6',
     Header  => $header,
 );
 
 is ($res->content, "OK\n", 'put v2 OK');
-my $cnt = $dbh->selectrow_array(
+$cnt = $dbh->selectrow_array(
             "select count(*) from coupon_usage
             where uniq_key='receipt11' and status='accepted' and card_number=5464 and coupon_id in(1,4,6) ",
         );

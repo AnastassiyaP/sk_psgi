@@ -1,40 +1,23 @@
 #!/usr/bin/perl
 use 5.14.0;
-use utf8;
 
 use strict;
 use warnings;
 use JSON;
 
+use lib 'conf', 'lib';
+
 use Plack::Test;
 use HTTP::Request::Common;
 use Plack::Util;
-use Test::More;
-use DBI;
+use Test::More tests=>5;
+use DB;
 
-my $dir = '.';
-
-BEGIN
-{
-    $dir = '.';
-}
-
-my $CFG = require "./conf/unit-app.conf";
-state $dbh;
-
-connect_db();
+my $CFG = require "unit-app.conf";
+my $dbh = connect_db($CFG, { mysql_multi_statements => 1,});
 prepare_db();
 
 ################################################################################
-sub connect_db
-{
-    $dbh //= DBI->connect_cached(
-        $CFG->{ sql_dsn }, $CFG->{ sql_user }, $CFG->{ sql_pass },
-        { RaiseError => 1, mysql_enable_utf8 => 1, mysql_multi_statements => 1, }
-    );
-    return $dbh;
-}
-
 sub prepare_db
 {
     $dbh->do( "Delete from actions_v2" );
@@ -42,7 +25,7 @@ sub prepare_db
     $dbh->do( "Delete from coupon_usage" );
     
 
-    my $file = "$dir/sql/data.sql";
+    my $file = "./sql/data.sql";
 
     my $sql_data = do {
         local $/ = undef;
@@ -76,9 +59,14 @@ sub test_db {
             where action_id= 1",
         );
     
-    is($cnt, $cnt_val, "У акции  $cnt_val купона");
+    is($cnt, $cnt_val, "У акции $cnt_val купона");
 }
 
+test_resp(
+   '/?cmd=bmp&actionId=11',
+    {},
+    "BMP unknown"
+);
 test_resp(
    '/?cmd=bmp&actionId=1',
     {"value"=>"YXNkZg==\n",
@@ -86,11 +74,6 @@ test_resp(
     "BMP ok"
 );
 
-test_resp(
-   '/?cmd=bmp&actionId=11',
-    {},
-    "BMP unknown"
-);
 
 test_db(3);
 

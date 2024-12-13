@@ -12,20 +12,20 @@ use lib 'lib', "conf", "$dir/lib";
 
 use Plack::Builder;
 use Plack::Request;
-use DBI;
 use Carp;
 use JSON::XS;
 use MIME::Base64;
+
+use DB;
+
 use SmCh::Coupon::Generate qw(
     generateCouponNumber
     generateCouponImg
 );
 
+my $CFG = do "./conf/unit-app.conf";
 
-my $CFG = require "unit-app.conf";
 
-#      AND start_date <= NOW()
-#      AND NOW() < end_date
 my $SQL_actionByActionId = <<SQL;
     SELECT *
     FROM `actions_v2`
@@ -73,8 +73,9 @@ sub get
 
     my $cmd      = $params->{ cmd };
     my $actionId = $params->{ actionId };
-
-    my $dbh    = _connect_db();
+    
+    my $dbh    = connect_db($CFG);
+    
     my $result = $dbh->selectrow_hashref( $SQL_actionByActionId, undef, $actionId );
 
     my $answer = {};
@@ -117,18 +118,4 @@ builder
     enable 'ContentLength';
     $app;
 };
-################################################################################
-sub _connect_db
-{
-    my $dbh = DBI->connect(
-        $CFG->{ sql_dsn }, $CFG->{ sql_user }, $CFG->{ sql_pass },
-        {
-            PrintError        => 0,
-            RaiseError        => 1,
-            mysql_enable_utf8 => 1,
-        },
-        )
-        or die "Can't connect to MySQL: $DBI::err ($DBI::errstr)";
-    return $dbh;
-}
 ################################################################################

@@ -2,6 +2,7 @@
 use 5.14.0;
 use utf8;
 
+use lib 'conf', 'lib';
 use strict;
 use warnings;
 use JSON;
@@ -9,31 +10,13 @@ use JSON;
 use Plack::Test;
 use HTTP::Request::Common;
 use Plack::Util;
-use Test::More;
-use DBI;
+use Test::More tests=>15;
+use DB;
 
-my $dir = '.';
+my $CFG = require "unit-app.conf";
+my $dbh = connect_db($CFG, {mysql_multi_statements => 1});
 
-BEGIN
-{
-    $dir = '.';
-}
-
-my $CFG = require "./conf/unit-app.conf";
-state $dbh;
-
-connect_db();
 prepare_db();
-
-################################################################################
-sub connect_db
-{
-    $dbh //= DBI->connect_cached(
-        $CFG->{ sql_dsn }, $CFG->{ sql_user }, $CFG->{ sql_pass },
-        { RaiseError => 1, mysql_enable_utf8 => 1, mysql_multi_statements => 1, }
-    );
-    return $dbh;
-}
 
 sub prepare_db
 {
@@ -42,7 +25,7 @@ sub prepare_db
     $dbh->do( "Delete from coupon_usage" );
     
 
-    my $file = "$dir/sql/data.sql";
+    my $file = "./sql/data.sql";
     my $sql_data = do {
         local $/ = undef;
         open my $fh, "<", $file
@@ -59,7 +42,7 @@ my $test   = Plack::Test->create( $app );
 my $header = [ 'Content-Type' => 'application/json; charset=UTF-8' ];
 
 my $uri = 'coupon-hold';
-### Holdout 
+########## Holdout #################################
 
 #error
 
@@ -133,7 +116,6 @@ test_resp( $uri, $data, $answer, "Promocode hold out of limit not succeed" );
 #TODO: проверить статус
 
 
-########################################################################
 ###### Расхолдирование #################################################
 
 ### Unhold по купону
@@ -220,7 +202,6 @@ sub test_resp {
         Header  => $header,
         Content => encode_json($data)
     );
-    
     is_deeply( decode_json( $res->content ), $answer, $text );
 }
 

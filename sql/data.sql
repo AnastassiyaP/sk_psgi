@@ -3,11 +3,12 @@
 insert into actions_v2 (id,status,type,   start_date,  end_date,   `limit`,action_body,options,addr,bmp_fld)
 values (1,'run',  'coupon','2024-01-01','2030-01-01',5,
         '{"var1 %%%COUPON_VAR%%%":"Купон %%%COUPON_NUMBER%%% для карты %%%CARD_NUMBER%%% по акции %%%ACTION_ID%%% %%%START_DATE%%% %%%END_DATE%%%","aId":1}',NULL,'{}','asdf');
-
 insert into coupon (id,code,action_id,placeholders) values (1,'121',1,'{"COUPON_VAR": 1}');
-insert into coupon (id,code,action_id,placeholders) values (2,'122',1,'{"COUPON_VAR": 2}');
-insert into coupon (id,code,action_id,placeholders) values (3,'123',1,'{"COUPON_VAR": 3}');
-
+insert into coupon (id,code,action_id,placeholders)
+values (2,'122',1,'{"COUPON_VAR": 2}');
+insert into coupon (id,code,action_id,placeholders)
+values (3,'123',1,'{"COUPON_VAR": 3}');
+--  
 -- применения  купона № 1 в интернет аптеке
 insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
   values (1,5464,'cart1', 1000000, null,'new');

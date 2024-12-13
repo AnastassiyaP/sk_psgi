@@ -15,13 +15,14 @@ use lib "$dir/lib", "$dir/conf", "$dir/lib/perl";
 use Plack::Builder;
 use Plack::Request;
 
-use DBI;
 use Carp;
 use JSON::XS;
 use SFE::Logger::Stderr2;
+
+use DB;
 use Const;
 
-my $CFG = require "unit-app.conf";
+my $CFG = do "./conf/unit-app.conf";
 
 SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'debug' );
 
@@ -68,7 +69,7 @@ sub holdout
 
     my $params = decode_json( $request->content );
 
-    my $dbh = connect_db();
+    my $dbh = connect_db($CFG);
 
     my $loyaltyCard = $params->{ loyaltyCard };
     my $coupon      = $params->{ coupon };
@@ -168,7 +169,7 @@ sub unhold
     eval {
         $params = decode_json( $request->content );
     } or return { "error" => "Malformed JSON string" };
-    my $dbh = connect_db();
+    my $dbh = connect_db($CFG);
 
     my $cart        = $params->{ cartId };
     my $loyaltyCard = $params->{ loyaltyCard };
@@ -263,22 +264,11 @@ sub unhold
     );
 
     Infof( "Unholded actions %s with coupon %s, card_number %s",
-          (map {$_->{action_id}} @$usages),
+          [map {$_->{action_id}} @$usages],
           $coupon,
           $cardNumber );
     
     $answer->{ status }  = STATUS_OK;
     return $answer;
-}
-################################################################################
-sub connect_db
-{
-    state $dbh;
-    $dbh //= DBI->connect_cached(
-        $CFG->{ sql_dsn }, $CFG->{ sql_user }, $CFG->{ sql_pass },
-        { RaiseError => 1, mysql_enable_utf8 => 1 }
-        )
-        or die "Can't connect to MySQL: $DBI::err ($DBI::errstr)";
-    return $dbh;
 }
 ################################################################################

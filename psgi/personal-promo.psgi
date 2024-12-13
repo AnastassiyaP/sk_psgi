@@ -15,16 +15,17 @@ use lib 'conf', 'lib', 'lib/perl', "$dir/lib", "$dir/lib/perl";
 
 use Plack::Builder;
 use Plack::Request;
-use DBI;
 use Carp;
 use JSON::XS;
 use SFE::Logger::Stderr2;
 use ShopBrand qw(
     checkShopIdsByAddr
 );
+
+use DB;
 use Const;
 
-my $CFG = require "unit-app.conf";
+my $CFG = do "unit-app.conf";
 
 SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'warning' );
 
@@ -190,7 +191,7 @@ sub new_new_new {
     $self->{ params }    = $params;
     $self->{ method }    = $req->method();
     $self->{ path_info } = $req->path_info();
-    $self->{ dbh }       = connect_db();
+    $self->{ dbh }       = connect_db($CFG);
     
     state $shop_map = {
         'IA' => IA_SHOP_ID,
@@ -619,15 +620,4 @@ sub check_addr {
     return checkShopIdsByAddr( $self->{ dbh }, $shop_id, $addr );
 }
 
-################################################################################
-sub connect_db
-{
-    state $dbh;
-    $dbh //= DBI->connect_cached(
-        $CFG->{ sql_dsn }, $CFG->{ sql_user }, $CFG->{ sql_pass },
-        { RaiseError => 1, mysql_enable_utf8 => 1 }
-        )
-        or die "Can't connect to MySQL: $DBI::err ($DBI::errstr)";
-    return $dbh;
-}
 ################################################################################
