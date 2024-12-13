@@ -2,6 +2,7 @@ use strict;
 use warnings;
 
 my $dir;
+
 BEGIN
 {
     $dir = $0;
@@ -24,7 +25,6 @@ use SmCh::Coupon::Generate qw(
 );
 
 my $CFG = do "./conf/unit-app.conf";
-
 
 my $SQL_actionByActionId = <<SQL;
     SELECT *
@@ -73,9 +73,9 @@ sub get
 
     my $cmd      = $params->{ cmd };
     my $actionId = $params->{ actionId };
-    
-    my $dbh    = connect_db($CFG);
-    
+
+    my $dbh = connect_db( $CFG );
+
     my $result = $dbh->selectrow_hashref( $SQL_actionByActionId, undef, $actionId );
 
     my $answer = {};
@@ -91,7 +91,7 @@ sub get
         {
             my $couponNumber = 99 . generateCouponNumber( 12 );
             my $couponBmp    = generateCouponImg( $result->{ bmp_fld }, $couponNumber );
-            
+
             $dbh->do(
                 $SQL_AddCouponAction,
                 undef, $actionId, $couponNumber

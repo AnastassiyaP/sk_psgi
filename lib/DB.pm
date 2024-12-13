@@ -7,6 +7,7 @@ use base 'Exporter';
 our @EXPORT = qw(connect_db);
 
 state $dbh;
+
 sub connect_db
 {
     my $CFG = shift;

@@ -69,7 +69,7 @@ sub holdout
 
     my $params = decode_json( $request->content );
 
-    my $dbh = connect_db($CFG);
+    my $dbh = connect_db( $CFG );
 
     my $loyaltyCard = $params->{ loyaltyCard };
     my $coupon      = $params->{ coupon };
@@ -81,16 +81,16 @@ sub holdout
         "loyaltyCard" => $loyaltyCard,
         "status"      => STATUS_INVALID
     };
-    
+
     my $cardNumber = $loyaltyCard;
 
-    ($cardNumber // defined $coupon ) && $cart
+    ( $cardNumber // defined $coupon ) && $cart
         or return
         { "error" => "cartId - обязательно. Одно из полей coupon или loyaltyCard - обязательно" };
-        
+
     $cardNumber //= 0;
-    $coupon //= 0;
-    
+    $coupon     //= 0;
+
     my $usages = $dbh->selectall_arrayref( "
         SELECT us.id as usage_id,
                 us.coupon_id,
@@ -116,34 +116,43 @@ sub holdout
         JOIN coupon     c ON c.id = coupon_id
         JOIN actions_v2 a ON a.id = c.action_id 
         WHERE uniq_key = ?",
-          { Slice => {} },
-          $cardNumber, $cart
+        { Slice => {} },
+        $cardNumber, $cart
     );
     scalar @$usages
         or return $answer;
+
     # промокод - 2 лимита: 1 применение по карте и общий лимит на к-во карт
     # купон - Лимит применений без привязки к карте
     # карта - лимит на карту
-    foreach my $usage (@$usages) {
-        ($usage->{status} eq 'new')
+    foreach my $usage ( @$usages ) {
+        ( $usage->{ status } eq 'new' )
             or return $answer;
-            
+
         if (
-            $usage->{type} =~ /^(?:coupon|promocode)$/ and
-            $usage->{limit} and
-            $usage->{limit} <= $usage->{usage_cnt}){
+            $usage->{ type } =~ /^(?:coupon|promocode)$/ and
+            $usage->{ limit } and
+            $usage->{ limit } <= $usage->{ usage_cnt }
+            )
+        {
             return $answer;
         }
         if (
-            $usage->{type} =~ /^(?:card|promocode)$/
-                and !$cardNumber ){
+            $usage->{ type } =~ /^(?:card|promocode)$/
+            and !$cardNumber
+            )
+        {
             return $answer;
         }
-        if ($usage->{type} eq 'card' and 
-            $usage->{limit} and $usage->{limit} <= $usage->{usage_cnt_card}){
+        if (
+            $usage->{ type } eq 'card'
+            and
+            $usage->{ limit } and $usage->{ limit } <= $usage->{ usage_cnt_card }
+            )
+        {
             return $answer;
         }
-        if ($usage->{type} eq 'promocode' and  $usage->{usage_cnt_card}>0) {
+        if ( $usage->{ type } eq 'promocode' and $usage->{ usage_cnt_card } > 0 ) {
             return $answer;
         }
     }
@@ -153,10 +162,10 @@ sub holdout
         "UPDATE `coupon_usage`
              SET status = 'holdout'
              WHERE id in ($qmarks)",
-        undef, map {$_->{usage_id}} @$usages
+        undef, map { $_->{ usage_id } } @$usages
     );
 
-    Info("$cardNumber applied for cart $cart");
+    Info( "$cardNumber applied for cart $cart" );
 
     $answer->{ status } = STATUS_OK;
     return $answer;
@@ -169,7 +178,7 @@ sub unhold
     eval {
         $params = decode_json( $request->content );
     } or return { "error" => "Malformed JSON string" };
-    my $dbh = connect_db($CFG);
+    my $dbh = connect_db( $CFG );
 
     my $cart        = $params->{ cartId };
     my $loyaltyCard = $params->{ loyaltyCard };
@@ -177,9 +186,8 @@ sub unhold
 
     my $cardNumber = $loyaltyCard;
 
-    ($cardNumber // defined $coupon )
+    ( $cardNumber // defined $coupon )
         or return { "error" => "Одно из полей coupon или loyaltyCard - обязательно" };
-
 
     my $answer = {
         "cartId"      => $cart,
@@ -188,11 +196,10 @@ sub unhold
         "status"      => STATUS_INVALID
     };
 
-    
     $cardNumber //= 0;
-    unless ( defined $cart) {
-        my $code = defined $coupon ? $coupon : $cardNumber; 
-        my $carts = $dbh->selectall_arrayref("
+    unless ( defined $cart ) {
+        my $code  = defined $coupon ? $coupon : $cardNumber;
+        my $carts = $dbh->selectall_arrayref( "
              SELECT uniq_key 
              FROM coupon_usage us 
              JOIN coupon     c ON c.id = coupon_id
@@ -202,25 +209,25 @@ sub unhold
                AND card_number = ?
             LIMIT 2
              ",
-             {Slice=>{}},
-             $code, $cardNumber);
+            { Slice => {} },
+            $code, $cardNumber );
 
         scalar @$carts or return $answer;
-        if (scalar @$carts > 1 ){
+        if ( scalar @$carts > 1 ) {
             return {
-                "error"=> "Захолдировано несколько купонов, не удается выбрать корзину"
-            }
+                "error" => "Захолдировано несколько купонов, не удается выбрать корзину"
+            };
         }
-        $cart = $carts->[0]->{uniq_key};
+        $cart = $carts->[ 0 ]->{ uniq_key };
     }
 
     my @code;
-    for my $code ($cardNumber, $coupon) {
-        if ( defined $code) {
+    for my $code ( $cardNumber, $coupon ) {
+        if ( defined $code ) {
             push @code, $code;
         }
     }
-    my $qmarks = join(',', ('?') x @code);
+    my $qmarks = join( ',', ( '?' ) x @code );
     my $usages = $dbh->selectall_arrayref( "
         SELECT us.id as usage_id,
                 c.action_id,
@@ -236,19 +243,21 @@ sub unhold
         AND code in ($qmarks)
         AND us.status='holdout'
         ",
-          { Slice => {} },
-          $cart, @code
+        { Slice => {} },
+        $cart, @code
     );
     scalar @$usages
         or return $answer;
-    
-    foreach my $usage (@$usages) {
+
+    foreach my $usage ( @$usages ) {
         if (
-            $usage->{type} =~ /^(?:card|promocode)$/
-            and !$cardNumber) {
+            $usage->{ type } =~ /^(?:card|promocode)$/
+            and !$cardNumber
+            )
+        {
             return $answer;
         }
-        if( $cardNumber != $usage->{card_number}) {
+        if ( $cardNumber != $usage->{ card_number } ) {
             return $answer;
         }
     }
@@ -260,15 +269,17 @@ sub unhold
              WHERE id in ($qmarks)",
         undef,
         COUPON_STATUS_CANCELED,
-        map {$_->{usage_id}} @$usages
+        map { $_->{ usage_id } } @$usages
     );
 
-    Infof( "Unholded actions %s with coupon %s, card_number %s",
-          [map {$_->{action_id}} @$usages],
-          $coupon,
-          $cardNumber );
-    
-    $answer->{ status }  = STATUS_OK;
+    Infof(
+        "Unholded actions %s with coupon %s, card_number %s",
+        [ map { $_->{ action_id } } @$usages ],
+        $coupon,
+        $cardNumber
+    );
+
+    $answer->{ status } = STATUS_OK;
     return $answer;
 }
 ################################################################################

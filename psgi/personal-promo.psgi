@@ -32,8 +32,8 @@ SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'warning' );
 #список работающих акций по cardNumber или code
 
 # promocode - 2 лимита: 1 применение по карте и общий лимит на к-во карт
-# coupon - Лимит применений на купон без привязки к карте 
-# card - лимит на карту 
+# coupon - Лимит применений на купон без привязки к карте
+# card - лимит на карту
 my $SQL_actionByCardNumber_v2 = <<SQL;
 SELECT c.action_id,
     c.id as coupon_id,
@@ -158,7 +158,9 @@ my $app = sub {
     {
         if ( $self->{ path_info } =~ m{/v2} ) {
             $self->put_v2();
-        } elsif($self->{path_info } =~m{/bind_cart} ) {
+        }
+        elsif ( $self->{ path_info } =~ m{/bind_cart} ) {
+
             #TODO
             $self->bind_cart_actions();
         }
@@ -191,18 +193,19 @@ sub new_new_new {
     $self->{ params }    = $params;
     $self->{ method }    = $req->method();
     $self->{ path_info } = $req->path_info();
-    $self->{ dbh }       = connect_db($CFG);
-    
+    $self->{ dbh }       = connect_db( $CFG );
+
     state $shop_map = {
-        'IA' => IA_SHOP_ID,
+        'IA'    => IA_SHOP_ID,
         'undef' => 0,
     };
 
-
     my $trade = $params->{ trade };
     if ( $trade ) {
-        $self->{ shop_id } = ( exists $shop_map->{ $trade } ) ?
-            $shop_map->{ $trade } :
+        $self->{ shop_id } = ( exists $shop_map->{ $trade } )
+            ?
+            $shop_map->{ $trade }
+            :
             $trade =~ s/^TM//ir;
     }
 
@@ -216,19 +219,19 @@ sub getAction
 
     my $params = $self->{ params };
 
-    my $cardNumber = $params->{ cardNumber };#карта или купон
+    my $cardNumber = $params->{ cardNumber };    #карта или купон
     my $cart       = $params->{ cart };
 
     my $sth = $self->{ dbh }->prepare( $SQL_actionByCardNumber );
-    $sth->execute( $cardNumber  );
+    $sth->execute( $cardNumber );
     my @answer;
     my @couponId;
-    
+
     my $card = 0;
-    
-    while (my $res = $sth->fetchrow_hashref )
+
+    while ( my $res = $sth->fetchrow_hashref )
     {
-        if ($res->{type} eq 'card') {
+        if ( $res->{ type } eq 'card' ) {
             $card = $cardNumber;
         }
         $self->check_addr( $res->{ addr } ) or next;
@@ -243,7 +246,7 @@ sub getAction
     $sth->finish();
 
     # Связываем корзину ИА, номер карты/купона и id акции
-    if ( $cart && scalar @couponId  ) {
+    if ( $cart && scalar @couponId ) {
         $self->add_coupon_usage( $cart, $card, \@couponId );
     }
 
@@ -259,7 +262,7 @@ sub getCoupon
 
     my $params = $self->{ params };
 
-    my $coupon = $params->{ cardNumber }; #только купон
+    my $coupon = $params->{ cardNumber };    #только купон
     my $cart   = $params->{ cart };
     my $card   = 0;
 
@@ -268,11 +271,10 @@ sub getCoupon
 
     my $sth = $self->{ dbh }->prepare( $SQL_actionByCoupon );
     $sth->execute( $coupon );
-    
 
     while ( my $res = $sth->fetchrow_hashref )
     {
-        Debugf("Find action %s", $res );
+        Debugf( "Find action %s", $res );
         my ( $status, $reason ) = $self->couponStatus( $res );
         my $answer = {
             status    => $status,
@@ -297,6 +299,7 @@ sub getCoupon
             reason    => "Not found",
         };
     }
+
     # Связываем корзину ИА, номер карты/купона и id акции
     if ( $cart && @couponIdToBind ) {
         $self->add_coupon_usage( $cart, $card, \@couponIdToBind );
@@ -309,25 +312,25 @@ sub getCoupon
 ################################################################################
 sub getAction_v2
 {
-    my $self = shift;
+    my $self   = shift;
     my $params = $self->{ params };
 
-    my $cardNumber = $params->{ cardNumber };#карта
+    my $cardNumber = $params->{ cardNumber };    #карта
     my $cart       = $params->{ cart };
 
-    my @couponCode     = $params->get_all( "coupon" );
+    my @couponCode = $params->get_all( "coupon" );
     push @couponCode, $cardNumber;
 
-    my $qmarks = join(',', ('?') x @couponCode);
+    my $qmarks = join( ',', ( '?' ) x @couponCode );
 
-    my $SQL = sprintf($SQL_actionByCardNumber_v2, $qmarks);
+    my $SQL = sprintf( $SQL_actionByCardNumber_v2, $qmarks );
 
     my $sth = $self->{ dbh }->prepare( $SQL );
     $sth->execute( $cardNumber, @couponCode );
 
     my @answer;
     my @couponId;
-    
+
     my $res;
     while ( $res = $sth->fetchrow_hashref )
     {
@@ -342,7 +345,7 @@ sub getAction_v2
 
         if ( $status eq STATUS_OK ) {
             push @couponId, $res->{ coupon_id };
-            my $action = $self->prepareAction( $cardNumber, $res);
+            my $action = $self->prepareAction( $cardNumber, $res );
             $answer->{ action } = $action;
         }
     }
@@ -359,22 +362,25 @@ sub put
     my $dbh  = $self->{ dbh };
 
     my $params = $self->{ params };
-    
-    my $uniq_key   = $params->{uniqKey};
-    my $receipt_ts = $params->{receiptTS};
+
+    my $uniq_key   = $params->{ uniqKey };
+    my $receipt_ts = $params->{ receiptTS };
     my @actionsId  = $params->get_all( "actionsId" );
-    
-    unless ( $uniq_key && defined $receipt_ts && scalar @actionsId){
+
+    unless ( $uniq_key && defined $receipt_ts && scalar @actionsId ) {
         my $res = $self->{ req }->new_response( 400 );
         $res->headers( [ 'Content-Type' => 'application/json' ] );
 
-        $res->body(encode_json(
-            {"error"=> "Необходимые аргументы для сохранения записи: uniqKey, receiptTS, actionsId"
-             }
-        ));
+        $res->body(
+            encode_json(
+                {
+                    "error" => "Необходимые аргументы для сохранения записи: uniqKey, receiptTS, actionsId"
+                }
+            )
+        );
         return $res->finalize();
     }
-    
+
     my @couponId;
     my ( $action_id, $coupon_id, $card_number );
     foreach ( @actionsId )
@@ -387,7 +393,7 @@ sub put
         $card_number,
         \@couponId,
         'accepted',
-        $self->{shop_id} // 0,
+        $self->{ shop_id } // 0,
         $receipt_ts,
     );
 
@@ -397,7 +403,7 @@ sub put
 }
 ################################################################################
 # метод от хаба
-# TODO: дообсудить с Денисом, либо убрать совсем, либо получать список @couponId вместо actions 
+# TODO: дообсудить с Денисом, либо убрать совсем, либо получать список @couponId вместо actions
 sub put_v2
 {
     my $self = shift;
@@ -405,17 +411,19 @@ sub put_v2
 
     my $params = $self->{ params };
 
-    my $uniq_key   = $params->{uniqKey};
-    my $cardNumber = $params->{cardNumber};
-    my $receipt_ts = $params->{receiptTS};
+    my $uniq_key   = $params->{ uniqKey };
+    my $cardNumber = $params->{ cardNumber };
+    my $receipt_ts = $params->{ receiptTS };
     my @couponId   = $params->get_all( "couponId" );
-    
-    unless ( $uniq_key && defined $receipt_ts && scalar @couponId){
+
+    unless ( $uniq_key && defined $receipt_ts && scalar @couponId ) {
         my $res = $self->{ req }->new_response( 400 );
         $res->headers( [ 'Content-Type' => 'application/json' ] );
-        $res->body(encode_json(
-            {"error"=> "Необходимые аргументы для сохранения записи: uniqKey, receiptTS, couponId"}
-        ));
+        $res->body(
+            encode_json(
+                { "error" => "Необходимые аргументы для сохранения записи: uniqKey, receiptTS, couponId" }
+            )
+        );
         return $res->finalize();
     }
     $self->add_coupon_usage(
@@ -423,31 +431,31 @@ sub put_v2
         $cardNumber,
         \@couponId,
         'accepted',
-        $self->{shop_id} // 0,
-        $receipt_ts,  );
+        $self->{ shop_id } // 0,
+        $receipt_ts,
+    );
 
     my $res = $self->{ req }->new_response( 200 );
     $res->body( "OK\n" );
     return $res->finalize();
 }
 
-
 ################################################################################
 # Метод от Ядра
 # Связывает фактически примененные акции с корзиной
-sub bind_cart_actions{
+sub bind_cart_actions {
     my $self = shift;
 
     my $params = $self->{ params };
 
-    my $cardNumber = $params->{ cardNumber };#карта
+    my $cardNumber = $params->{ cardNumber };          #карта
     my $cart       = $params->{ cart };
     my @couponId   = $params->get_all( "couponId" );
 
     $self->add_coupon_usage(
         $cart,
         $cardNumber,
-        \@couponId, 'new', $self->{shop_id} // 0, undef,
+        \@couponId, 'new', $self->{ shop_id } // 0, undef,
     );
     my $res = $self->{ req }->new_response( 200 );
     $res->body( "OK\n" );
@@ -457,24 +465,25 @@ sub bind_cart_actions{
 
 ################################################################################
 #Подставляет в actions.action_body значения из card_action.placeholders и предопределенные из базы.
-# формирует итоговый json с акцией 
+# формирует итоговый json с акцией
 sub prepareAction {
     my $self        = shift;
     my $cardNumber  = shift;
     my $card_action = shift;
-    utf8::encode($card_action->{ placeholders });
-    my $placeholders = decode_json($card_action->{ placeholders }|| '{}');
-    
-    $placeholders->{CARD_NUMBER}   = $cardNumber;
-    $placeholders->{COUPON_NUMBER} = $card_action->{code};
-    $placeholders->{ACTION_ID}     = $card_action->{action_id};
-    $placeholders->{START_DATE}    = $card_action->{start_date};
-    $placeholders->{END_DATE}      = $card_action->{end_date};
+    utf8::encode( $card_action->{ placeholders } );
+    my $placeholders = decode_json( $card_action->{ placeholders } || '{}' );
+
+    $placeholders->{ CARD_NUMBER }   = $cardNumber;
+    $placeholders->{ COUPON_NUMBER } = $card_action->{ code };
+    $placeholders->{ ACTION_ID }     = $card_action->{ action_id };
+    $placeholders->{ START_DATE }    = $card_action->{ start_date };
+    $placeholders->{ END_DATE }      = $card_action->{ end_date };
+
     #Errf("  action body %s", $action_body);
 
     my $action_body = $card_action->{ action_body };
     $action_body =~ s/%%%(\w+)%%%/$placeholders->{$1}/ge;
-    
+
     my $action = decode_json( $action_body );
     if ( $action->{ aId } && $action->{ aId } =~ /^[0-9]+$/ )
     {
@@ -484,8 +493,8 @@ sub prepareAction {
         $action->{ aId } = "$card_action->{action_id}_$card_action->{coupon_id}_$cardNumber";
     }
 
-    $action->{ cId } = $card_action->{coupon_id};
-    
+    $action->{ cId } = $card_action->{ coupon_id };
+
     return $action;
 }
 
@@ -504,35 +513,43 @@ sub prepareAction {
 #TODO добавить условие про карту для промокода
 #двойной лимит для карты
 sub couponStatus {
-    my $self = shift;
-    my $arg  = shift;
+    my $self       = shift;
+    my $arg        = shift;
     my $cardNumber = shift;
 
     my $disc_count_limit = $arg->{ limit };
     my $disc_count       = $arg->{ disc_count };
-    my $disc_count_card       = $arg->{ disc_count_card };
+    my $disc_count_card  = $arg->{ disc_count_card };
 
     # invalid - купон был использован и погашен ранее
     if (
-        $arg->{type} =~ /^(?:coupon|promocode)$/ and
-        $arg->{limit} and
-        $arg->{limit} <= $arg->{usage_cnt}) {
-        return (STATUS_INVALID,
+        $arg->{ type } =~ /^(?:coupon|promocode)$/ and
+        $arg->{ limit } and
+        $arg->{ limit } <= $arg->{ usage_cnt }
+        )
+    {
+        return ( STATUS_INVALID,
             "action type[$arg->{type}]: limit[$arg->{limit}] <= usage_cnt[$arg->{usage_cnt}]"
-                );
-    }
-    if ($arg->{type} eq 'card' and 
-        $arg->{limit} and $arg->{limit} <= $arg->{usage_cnt_card}){
-        return (STATUS_INVALID,
-            "action type[$arg->{type}]: limit[$arg->{limit}] <= usage_cnt[$arg->{usage_cnt_card}]"
-                );
+        );
     }
     if (
-        $arg->{type} eq 'promocode' and
-        (!$cardNumber or $arg->{usage_cnt_card}>0)){
-        return (STATUS_INVALID,
+        $arg->{ type } eq 'card'
+        and
+        $arg->{ limit } and $arg->{ limit } <= $arg->{ usage_cnt_card }
+        )
+    {
+        return ( STATUS_INVALID,
+            "action type[$arg->{type}]: limit[$arg->{limit}] <= usage_cnt[$arg->{usage_cnt_card}]"
+        );
+    }
+    if (
+        $arg->{ type } eq 'promocode' and
+        ( !$cardNumber or $arg->{ usage_cnt_card } > 0 )
+        )
+    {
+        return ( STATUS_INVALID,
             "action type[$arg->{type}]: cardNumber[$cardNumber] not defined or usage_cnt[$arg->{usage_cnt_card}]>0"
-                );
+        );
     }
 
     my $end_date = $arg->{ end_date };
@@ -582,17 +599,17 @@ sub add_coupon_usage
     my $cardNumber  = shift;
     my $couponIdArr = shift;
     my $status      = shift;
-    my $shop_id      = shift;
-    my $receipt_ts   = shift;
-    
-    my $dbh = $self->{ dbh };
-    
-    $status //= 'new';
-    $shop_id //= 0;
-    $dbh->do("DELETE FROM coupon_usage where uniq_key=? ",undef,$cart);
+    my $shop_id     = shift;
+    my $receipt_ts  = shift;
 
-    my $qmarks = join(',', ('(?,?,?,?,?,?)') x @$couponIdArr);
-    my $sql = sprintf($SQL_add_coupon_usage, $qmarks);
+    my $dbh = $self->{ dbh };
+
+    $status  //= 'new';
+    $shop_id //= 0;
+    $dbh->do( "DELETE FROM coupon_usage where uniq_key=? ", undef, $cart );
+
+    my $qmarks = join( ',', ( '(?,?,?,?,?,?)' ) x @$couponIdArr );
+    my $sql    = sprintf( $SQL_add_coupon_usage, $qmarks );
 
     my @values = map {
         $_, $cardNumber, $cart, $shop_id, $status, $receipt_ts
@@ -605,10 +622,10 @@ sub add_coupon_usage
 sub check_addr {
     my $self     = shift;
     my $addrJson = shift;
-    my $shop_id = $self->{ shop_id };
+    my $shop_id  = $self->{ shop_id };
 
     # Если $shop_id или $addrJson не задан, то не ограничиваем по адресу
-    ($shop_id and $shop_id ne IA_SHOP_ID)
+    ( $shop_id and $shop_id ne IA_SHOP_ID )
         or return 1;
     defined $addrJson or return 1;
 
@@ -616,7 +633,7 @@ sub check_addr {
 
     # Если все, то дальше смотреть не нужно
     $addr->{ all } && return 1;
-    
+
     return checkShopIdsByAddr( $self->{ dbh }, $shop_id, $addr );
 }
 
