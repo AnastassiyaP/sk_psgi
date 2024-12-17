@@ -142,7 +142,7 @@ test_resp( $uri, $data, $answer, "Unhold without cart succeed " );
 
 #Две корзины c holdout и card_number=0 для одного купона
 $data   = { "coupon" => 123 };
-$answer = { "error"  => "Захолдировано несколько купонов, не удается выбрать корзину" };
+$answer = { "error" => "Купон захолдирован несколько раз, не удается выбрать корзину"};
 
 test_resp( $uri, $data, $answer, "Unhold without cart  not succeed when two carts holded" );
 

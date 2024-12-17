@@ -198,7 +198,14 @@ sub unhold
 
     $cardNumber //= 0;
     unless ( defined $cart ) {
-        my $code  = defined $coupon ? $coupon : $cardNumber;
+
+        my $q = "";
+        my @code  = defined $coupon ? ($coupon) : ($cardNumber);
+        if( $cardNumber ) {
+            push @code, $cardNumber; 
+            $q = "AND card_number = ?";
+        }
+            
         my $carts = $dbh->selectall_arrayref( "
              SELECT uniq_key 
              FROM coupon_usage us 
@@ -206,16 +213,16 @@ sub unhold
              JOIN actions_v2 a ON a.id = c.action_id 
              WHERE code = ?
                AND us.status='holdout'
-               AND card_number = ?
+               $q
             LIMIT 2
              ",
             { Slice => {} },
-            $code, $cardNumber );
+            @code );
 
         scalar @$carts or return $answer;
         if ( scalar @$carts > 1 ) {
             return {
-                "error" => "Захолдировано несколько купонов, не удается выбрать корзину"
+                "error" => "Купон захолдирован несколько раз, не удается выбрать корзину"
             };
         }
         $cart = $carts->[ 0 ]->{ uniq_key };
