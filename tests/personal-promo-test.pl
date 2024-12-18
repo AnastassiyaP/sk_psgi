@@ -13,7 +13,7 @@ use lib 'conf', 'lib';
 use Plack::Test;
 use HTTP::Request::Common;
 use Plack::Util;
-use Test::More tests => 13;
+use Test::More tests => 16;
 use Test::Deep;
 
 use DB;
@@ -97,6 +97,26 @@ test_resp(
     "getCoupon by coupon"
 );
 
+########## getCoupon с истекшим лимитом ##################
+test_resp(
+    "/coupon?cart=1&cardNumber=123",
+    [
+        {
+            "status"    => "invalid",
+            "reason"    => "action type[coupon]: limit[5] <= usage_cnt[5]",
+            "action_id" => 1,
+        }
+    ],
+    "getCoupon out of limit "
+);
+
+############# getAction с истекшим лимитом ############
+test_resp(
+    "/?cart=1&cardNumber=123",
+    [],
+    "getAction out of limit"
+);
+
 ############# getAction v2  ###################
 my $answer = [
     {
@@ -135,41 +155,31 @@ test_resp(
 $answer = [
     {
         "action" => {
-            "Привет Сидоров В." => "Акция по карте 5466 1 применение на карту. Скидка 5%",
-            "aId"               => "3_7_5466",
-            "cId"               => "7"
+            "Привет Иванов А." => "Акция по карте 5464 1 применение на карту. Скидка 5%",
+            "aId"               => "3_5_5464",
+            "cId"               => "5"
         },
         "reason" => "ok", "action_id" => 3, "status" => "ok"
-    },
-    {
-        'status'    => 'unknown',
-        'action_id' => 4,
-        'reason'    => 'status[draft]'
-    },
-    {
-        'status'    => 'expired',
-        'action_id' => 5,
-        'reason'    => re( 'end_date\[2024-01-30 00:00:00\] < now_date\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]' ),
     },
     {
         "action_id" => 2,
         "status"    => "ok",
         "action"    => {
-            "aId"  => "2_4_5466",
+            "aId"  => "2_4_5464",
             "cId"  => "4",
-            '5466' => "Промокод vmeste2024 2 применения на карту",
+            '5464' => "Промокод vmeste2024 2 применения на карту",
         },
         "reason" => "ok"
     },
 ];
 
 test_resp(
-    "/v2/action?cart=1&cardNumber=5466&coupon=vmeste2024",
+    "/v2/action?cart=1&cardNumber=5464&coupon=vmeste2024",
     $answer,
     "getAction v2 by card & coupon"
 );
 
-############# карта + промокод потраченые ###################
+############## карта +  потраченый промокод ###################
 $answer = [
     {
         "action_id" => 2,
@@ -181,9 +191,35 @@ $answer = [
 test_resp(
     "/v2/action?cart=1&cardNumber=1235&coupon=vmeste2024",
     $answer,
-    "getAction v2 by card & coupon"
+    "getAction v2 by card & used promocode"
 );
 
+
+############## потраченные карта + купон ###################
+
+$answer = [{
+    "reason"=>"action type[coupon]: limit[5] <= usage_cnt[5]",
+    "action_id"=>1,
+    "status"=>"invalid"
+},{
+    "status"=>"invalid",
+    "reason"=>"action type[card]: limit[1] <= usage_cnt[1]",
+    "action_id"=>3
+},{
+    "status"=>"unknown",
+    "action_id"=>4,
+    "reason"=>"status[draft]"
+},{
+    "action_id"=>5,
+    "reason"=>"action type[card]: limit[1] <= usage_cnt[1]",
+    "status"=>"invalid"
+}];
+
+test_resp(
+    "/v2/action?cart=1&cardNumber=5465&coupon=123",
+    $answer,
+    "getAction v2 invalid statuses"
+);
 ############# put ###################
 
 my $res = $test->request(
@@ -220,7 +256,8 @@ $res = $test->request(
     Header => $header,
 );
 
-is( $res->content, "OK\n", 'put OK' );
+is( $res->content, "OK\n", 'bind OK' );
+
 $cnt = $dbh->selectrow_array(
     "select count(*) from coupon_usage
             where uniq_key='cart10' and status='new' and card_number=5466 and coupon_id in(2,4,7) ",

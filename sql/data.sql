@@ -14,14 +14,23 @@ insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,stat
   values (1,5464,'cart1', 1000000, null,'new');
 insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
   values (2,0,'cart2', 1000000, null,'holdout');
-insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
-  values (3,0,'cart3', 1000000, null,'holdout');
-insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
-  values (3, 0, 'cart4', 1000000, null,'holdout');
 
 -- применения  купона № 1 в магазине
 insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
   values (1,0,'receipt1',1,'2024-10-10','accepted');
+
+
+-- применения  купона № 3, лимит выбран
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (3,0,'cart3', 1000000, null,'holdout');
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (3, 0, 'cart4', 1000000, null,'holdout');
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (3,0,'rec1',1,'2024-10-10','accepted');
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (3,0,'rec2',1,'2024-10-10','accepted');
+insert into coupon_usage (coupon_id,card_number,uniq_key,shop_id,receipt_ts,status)
+  values (3,0,'rec3',1,'2024-10-10','accepted');
 
 
 -- Акция по промокоду. Одно применение  на карту
@@ -68,7 +77,7 @@ insert into actions_v2
     values (4,'draft', 'card','2024-01-01','2030-01-01',1,
             '{"Привет %%%NAME%%%":"Акция по карте %%%CARD_NUMBER%%% 1 применение на карту. Скидка 5%","aId":4}',NULL,'{}','asdf');
 insert into coupon (id, code, action_id, placeholders) values (8,'5465',4,'{"NAME": "Петров Б."}');
-insert into coupon (id, code, action_id, placeholders) values (9,'5464',4,'{"NAME": "Иванов А."}');
+-- insert into coupon (id, code, action_id, placeholders) values (9,'5464',4,'{"NAME": "Иванов А."}');
 insert into coupon (id, code, action_id, placeholders) values (10,'5466',4,'{"NAME": "Сидоров В."}');
 
 -- Акция по карте просрочена
@@ -77,7 +86,7 @@ insert into actions_v2
     values (5,'draft', 'card','2024-01-01','2024-01-30',1,
             '{"Привет %%%NAME%%%":"Акция по карте %%%CARD_NUMBER%%% 1 применение на карту. Скидка 5%","aId":5}',NULL,'{}','asdf');
 insert into coupon (id, code, action_id, placeholders) values (11,'5465',5,'{"NAME": "Петров Б."}');
-insert into coupon (id, code, action_id, placeholders) values (12,'5464',5,'{"NAME": "Иванов А."}');
+-- insert into coupon (id, code, action_id, placeholders) values (12,'5464',5,'{"NAME": "Иванов А."}');
 insert into coupon (id, code, action_id, placeholders) values (13,'5466',5,'{"NAME": "Сидоров В."}');
 
 insert into coupon_usage (coupon_id, card_number, uniq_key, shop_id, receipt_ts, status)
