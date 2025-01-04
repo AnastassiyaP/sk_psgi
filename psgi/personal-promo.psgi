@@ -246,7 +246,7 @@ sub getAction
     $sth->finish();
 
     # Связываем корзину ИА, номер карты/купона и id акции
-    if ( $cart && scalar @couponId ) {
+    if ( $cart && @couponId ) {
         $self->add_coupon_usage( $cart, $card, \@couponId );
     }
 
@@ -367,7 +367,7 @@ sub put
     my $receipt_ts = $params->{ receiptTS };
     my @actionsId  = $params->get_all( "actionsId" );
 
-    unless ( $uniq_key && defined $receipt_ts && scalar @actionsId ) {
+    unless ( $uniq_key && defined $receipt_ts && @actionsId ) {
         my $res = $self->{ req }->new_response( 400 );
         $res->headers( [ 'Content-Type' => 'application/json' ] );
 
@@ -416,7 +416,7 @@ sub put_v2
     my $receipt_ts = $params->{ receiptTS };
     my @couponId   = $params->get_all( "couponId" );
 
-    unless ( $uniq_key && defined $receipt_ts && scalar @couponId ) {
+    unless ( $uniq_key && defined $receipt_ts && @couponId ) {
         my $res = $self->{ req }->new_response( 400 );
         $res->headers( [ 'Content-Type' => 'application/json' ] );
         $res->body(

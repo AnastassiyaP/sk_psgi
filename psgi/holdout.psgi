@@ -119,7 +119,7 @@ sub holdout
         { Slice => {} },
         $cardNumber, $cart
     );
-    scalar @$usages
+    @$usages
         or return $answer;
 
     # промокод - 2 лимита: 1 применение по карте и общий лимит на к-во карт
@@ -219,8 +219,8 @@ sub unhold
             { Slice => {} },
             @code );
 
-        scalar @$carts or return $answer;
-        if ( scalar @$carts > 1 ) {
+        @$carts or return $answer;
+        if ( @$carts > 1 ) {
             return {
                 "error" => "Купон захолдирован несколько раз, не удается выбрать корзину"
             };
@@ -253,7 +253,7 @@ sub unhold
         { Slice => {} },
         $cart, @code
     );
-    scalar @$usages
+    @$usages
         or return $answer;
 
     foreach my $usage ( @$usages ) {
