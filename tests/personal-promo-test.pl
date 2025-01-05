@@ -13,10 +13,10 @@ use lib 'conf', 'lib';
 use Plack::Test;
 use HTTP::Request::Common;
 use Plack::Util;
-use Test::More tests => 16;
+use Test::More tests => 18;
 use Test::Deep;
 
-use DB;
+use PP::DB qw(connect_db);
 
 my $CFG = do "unit-app.conf";
 my $dbh = connect_db( $CFG, { mysql_multi_statements => 1 } );
@@ -222,15 +222,32 @@ test_resp(
 );
 ############# put ###################
 
+##### receiptTS in uniqKey
 my $res = $test->request(
-    PUT '/?uniqKey=receipt10&receiptTS=2024-10-10&actionsId=1_1_5464&actionsId=2_4_5464&actionsId=3_6_5464',
+    #&receiptTS=2024-10-10
+    PUT '/?uniqKey=1736054561_receipt10&actionsId=1_1_5464&actionsId=2_4_5464&actionsId=3_6_5464',
     Header => $header,
 );
 
 is( $res->content, "OK\n", 'put OK' );
 my $cnt = $dbh->selectrow_array(
     "select count(*) from coupon_usage
-            where uniq_key='receipt10' and status='accepted' and card_number=5464 and coupon_id in(1,4,6) ",
+            where uniq_key='1736054561_receipt10' and status='accepted' and card_number=5464 and coupon_id in(1,4,6) ",
+);
+
+is( $cnt, 3, "Coupon usage added" );
+
+##### receiptTS arg
+$res = $test->request(
+    #&receiptTS=2024-10-10
+    PUT '/?uniqKey=receipt11&receiptTS=2025-01-05 12:00:00&actionsId=1_1_5464&actionsId=2_4_5464&actionsId=3_6_5464',
+    Header => $header,
+);
+
+is( $res->content, "OK\n", 'put OK' );
+$cnt = $dbh->selectrow_array(
+    "select count(*) from coupon_usage
+            where uniq_key='receipt11' and status='accepted' and card_number=5464 and coupon_id in(1,4,6) ",
 );
 
 is( $cnt, 3, "Coupon usage added" );
@@ -238,14 +255,14 @@ is( $cnt, 3, "Coupon usage added" );
 ############# put v2 ###################
 
 $res = $test->request(
-    PUT '/v2?uniqKey=receipt11&cardNumber=5464&receiptTS=2024-10-10&couponId=1&couponId=4&couponId=6',
+    PUT '/v2?uniqKey=receipt12&cardNumber=5464&receiptTS=2024-10-10&couponId=1&couponId=4&couponId=6',
     Header => $header,
 );
 
 is( $res->content, "OK\n", 'put v2 OK' );
 $cnt = $dbh->selectrow_array(
     "select count(*) from coupon_usage
-            where uniq_key='receipt11' and status='accepted' and card_number=5464 and coupon_id in(1,4,6) ",
+            where uniq_key='receipt12' and status='accepted' and card_number=5464 and coupon_id in(1,4,6) ",
 );
 
 is( $cnt, 3, "v2 Coupon usage added" );
@@ -264,8 +281,6 @@ $cnt = $dbh->selectrow_array(
 );
 
 is( $cnt, 3, "Bind for cart & actions added" );
-
-done_testing;
 
 sub test_resp {
     my ( $uri, $answer, $text ) = @_;

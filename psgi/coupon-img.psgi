@@ -17,7 +17,7 @@ use Carp;
 use JSON::XS;
 use MIME::Base64;
 
-use DB;
+use PP::DB qw(connect_db);
 
 use SmCh::Coupon::Generate qw(
     generateCouponNumber

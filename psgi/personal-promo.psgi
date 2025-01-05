@@ -22,12 +22,13 @@ use ShopBrand qw(
     checkShopIdsByAddr
 );
 
-use DB;
-use Const;
+use PP::DB qw(connect_db);
+use PP::Const;
 
 my $CFG = do "unit-app.conf";
 
 SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'warning' );
+my $DBH;
 
 #список работающих акций по cardNumber или code
 
@@ -193,7 +194,9 @@ sub new_new_new {
     $self->{ params }    = $params;
     $self->{ method }    = $req->method();
     $self->{ path_info } = $req->path_info();
-    $self->{ dbh }       = connect_db( $CFG );
+
+    $DBH //= connect_db($CFG);
+    $self->{ dbh } = $DBH;
 
     state $shop_map = {
         'IA'    => IA_SHOP_ID,
@@ -203,20 +206,34 @@ sub new_new_new {
     my $trade = $params->{ trade };
     if ( $trade ) {
         $self->{ shop_id } = ( exists $shop_map->{ $trade } )
-            ?
-            $shop_map->{ $trade }
-            :
-            $trade =~ s/^TM//ir;
+            ? $shop_map->{ $trade }
+            : $trade =~ s/^TM//ir;
     }
 
     return $self;
+}
+################################################################################
+sub ok_request{
+    my ($self, $body) = @_;
+    my $res = $self->{ req }->new_response( 200 );
+
+    $res->body( $body );
+    return $res->finalize();
+}
+################################################################################
+sub bad_request{
+    my ($self, $body) = @_;
+    my $res = $self->{ req }->new_response( 400 );
+    $res->headers( [ 'Content-Type' => 'application/json' ] );
+
+    $res->body( $body );
+    return $res->finalize();
 }
 ################################################################################
 ### ядро и хаб ####
 sub getAction
 {
     my $self = shift;
-
     my $params = $self->{ params };
 
     my $cardNumber = $params->{ cardNumber };    #карта или купон
@@ -224,14 +241,14 @@ sub getAction
 
     my $sth = $self->{ dbh }->prepare( $SQL_actionByCardNumber );
     $sth->execute( $cardNumber );
+
     my @answer;
     my @couponId;
-
     my $card = 0;
 
     while ( my $res = $sth->fetchrow_hashref )
     {
-        if ( $res->{ type } eq 'card' ) {
+        if ( $res->{ type } eq COUPON_TYPE_CARD ) {
             $card = $cardNumber;
         }
         $self->check_addr( $res->{ addr } ) or next;
@@ -250,9 +267,7 @@ sub getAction
         $self->add_coupon_usage( $cart, $card, \@couponId );
     }
 
-    my $response = $self->{ req }->new_response( 200 );
-    $response->body( encode_json( \@answer ) );
-    return $response->finalize();
+    return $self->ok_request( encode_json( \@answer ) );
 }
 ################################################################################
 ### только ядро
@@ -350,10 +365,7 @@ sub getAction_v2
         }
     }
     $sth->finish();
-
-    my $response = $self->{ req }->new_response( 200 );
-    $response->body( encode_json( \@answer ) );
-    return $response->finalize();
+    return $self->ok_request(encode_json( \@answer ));
 }
 ################################################################################
 sub put
@@ -367,18 +379,23 @@ sub put
     my $receipt_ts = $params->{ receiptTS };
     my @actionsId  = $params->get_all( "actionsId" );
 
-    unless ( $uniq_key && defined $receipt_ts && @actionsId ) {
-        my $res = $self->{ req }->new_response( 400 );
-        $res->headers( [ 'Content-Type' => 'application/json' ] );
+    if ($uniq_key && !defined $receipt_ts){
+        ($receipt_ts) = split ('_', $uniq_key);
+        if ($receipt_ts =~ /^\d+$/){
+            my @dt = gmtime($receipt_ts);
+            $receipt_ts = sprintf (
+                "%s-%s-%s %s:%s:%s",
+                $dt[5]+1900, $dt[4]+1, $dt[3], $dt[2], $dt[1],$dt[0] ) ;
+        } else {
+            $receipt_ts = undef;
+        }
+        
+    }
 
-        $res->body(
-            encode_json(
-                {
-                    "error" => "Необходимые аргументы для сохранения записи: uniqKey, receiptTS, actionsId"
-                }
-            )
-        );
-        return $res->finalize();
+    unless ( $uniq_key && defined $receipt_ts && @actionsId ) {
+        return $self->bad_request( encode_json( {
+            "error" => "Необходимые аргументы для сохранения записи: uniqKey, receiptTS, actionsId"
+        } ) );
     }
 
     my @couponId;
@@ -388,6 +405,7 @@ sub put
         ( $action_id, $coupon_id, $card_number ) = split "_";
         push @couponId, $coupon_id;
     }
+    
     $self->add_coupon_usage(
         $uniq_key,
         $card_number,
@@ -397,9 +415,7 @@ sub put
         $receipt_ts,
     );
 
-    my $res = $self->{ req }->new_response( 200 );
-    $res->body( "OK\n" );
-    return $res->finalize();
+    return $self->ok_request("OK\n");
 }
 ################################################################################
 # метод от хаба
@@ -417,27 +433,23 @@ sub put_v2
     my @couponId   = $params->get_all( "couponId" );
 
     unless ( $uniq_key && defined $receipt_ts && @couponId ) {
-        my $res = $self->{ req }->new_response( 400 );
-        $res->headers( [ 'Content-Type' => 'application/json' ] );
-        $res->body(
-            encode_json(
+        return $self->bad_request (
+            encode_json (
                 { "error" => "Необходимые аргументы для сохранения записи: uniqKey, receiptTS, couponId" }
             )
         );
-        return $res->finalize();
     }
+
     $self->add_coupon_usage(
         $uniq_key,
         $cardNumber,
         \@couponId,
-        'accepted',
+        COUPON_STATUS_ACCEPTED,
         $self->{ shop_id } // 0,
         $receipt_ts,
     );
 
-    my $res = $self->{ req }->new_response( 200 );
-    $res->body( "OK\n" );
-    return $res->finalize();
+    return $self->ok_request( "OK\n" );
 }
 
 ################################################################################
@@ -455,12 +467,9 @@ sub bind_cart_actions {
     $self->add_coupon_usage(
         $cart,
         $cardNumber,
-        \@couponId, 'new', $self->{ shop_id } // 0, undef,
+        \@couponId, COUPON_STATUS_NEW, $self->{ shop_id } // 0, undef,
     );
-    my $res = $self->{ req }->new_response( 200 );
-    $res->body( "OK\n" );
-    return $res->finalize();
-
+    return $self->ok_request( "OK\n" );
 }
 
 ################################################################################
@@ -523,7 +532,8 @@ sub couponStatus {
 
     # invalid - купон был использован и погашен ранее
     if (
-        $arg->{ type } =~ /^(?:coupon|promocode)$/ and
+        ($arg->{ type } eq COUPON_TYPE_COUPON
+         or $arg->{ type } eq COUPON_TYPE_PROMOCODE) and
         $arg->{ limit } and
         $arg->{ limit } <= $arg->{ usage_cnt }
         )
@@ -533,7 +543,7 @@ sub couponStatus {
         );
     }
     if (
-        $arg->{ type } eq 'card'
+        $arg->{ type } eq COUPON_TYPE_CARD
         and
         $arg->{ limit } and $arg->{ limit } <= $arg->{ usage_cnt_card }
         )
@@ -543,7 +553,7 @@ sub couponStatus {
         );
     }
     if (
-        $arg->{ type } eq 'promocode' and
+        $arg->{ type } eq COUPON_TYPE_PROMOCODE and
         ( !$cardNumber or $arg->{ usage_cnt_card } > 0 )
         )
     {

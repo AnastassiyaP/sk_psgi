@@ -1,4 +1,4 @@
-package Const;
+package PP::Const;
 
 use strict;
 use warnings;

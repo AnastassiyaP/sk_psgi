@@ -19,8 +19,8 @@ use Carp;
 use JSON::XS;
 use SFE::Logger::Stderr2;
 
-use DB;
-use Const;
+use PP::DB qw(connect_db);
+use PP::Const;
 
 my $CFG = do "./conf/unit-app.conf";
 
@@ -126,7 +126,7 @@ sub holdout
     # купон - Лимит применений без привязки к карте
     # карта - лимит на карту
     foreach my $usage ( @$usages ) {
-        ( $usage->{ status } eq 'new' )
+        ( $usage->{ status } eq COUPON_STATUS_NEW )
             or return $answer;
 
         if (
@@ -145,14 +145,14 @@ sub holdout
             return $answer;
         }
         if (
-            $usage->{ type } eq 'card'
+            $usage->{ type } eq COUPON_TYPE_CARD
             and
             $usage->{ limit } and $usage->{ limit } <= $usage->{ usage_cnt_card }
             )
         {
             return $answer;
         }
-        if ( $usage->{ type } eq 'promocode' and $usage->{ usage_cnt_card } > 0 ) {
+        if ( $usage->{ type } eq COUPON_TYPE_PROMOCODE and $usage->{ usage_cnt_card } > 0 ) {
             return $answer;
         }
     }
@@ -160,9 +160,11 @@ sub holdout
     my $qmarks = join( ',', ( "?" ) x @$usages );
     $dbh->do(
         "UPDATE `coupon_usage`
-             SET status = 'holdout'
+             SET status = ?
              WHERE id in ($qmarks)",
-        undef, map { $_->{ usage_id } } @$usages
+        undef,
+        COUPON_STATUS_HOLDOUT,
+        map { $_->{ usage_id } } @$usages
     );
 
     Info( "$cardNumber applied for cart $cart" );
@@ -212,12 +214,14 @@ sub unhold
              JOIN coupon     c ON c.id = coupon_id
              JOIN actions_v2 a ON a.id = c.action_id 
              WHERE code = ?
-               AND us.status='holdout'
-               $q
-            LIMIT 2
+              $q
+             AND us.status=?
+             LIMIT 2
              ",
             { Slice => {} },
-            @code );
+            @code,
+            COUPON_STATUS_HOLDOUT
+            );
 
         @$carts or return $answer;
         if ( @$carts > 1 ) {
@@ -248,10 +252,11 @@ sub unhold
         JOIN actions_v2 a ON a.id = c.action_id 
         WHERE uniq_key = ?
         AND code in ($qmarks)
-        AND us.status='holdout'
-        ",
+        AND us.status=?",
         { Slice => {} },
-        $cart, @code
+        $cart,
+        @code,
+        COUPON_STATUS_HOLDOUT
     );
     @$usages
         or return $answer;

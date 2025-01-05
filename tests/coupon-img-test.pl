@@ -11,7 +11,7 @@ use Plack::Test;
 use HTTP::Request::Common;
 use Plack::Util;
 use Test::More tests => 5;
-use DB;
+use PP::DB qw(connect_db);
 
 my $CFG = require "unit-app.conf";
 my $dbh = connect_db( $CFG, { mysql_multi_statements => 1, } );
