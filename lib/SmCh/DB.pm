@@ -1,4 +1,4 @@
-package PP::DB;
+package SmCh::DB;
 
 use 5.14.0;
 use DBI;

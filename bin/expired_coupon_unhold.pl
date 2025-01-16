@@ -6,7 +6,7 @@ use warnings;
 use lib 'conf', 'lib', 'lib/perl';
 
 use SFE::Logger::Stderr2;
-use DB;
+use SmCh::DB qw(connect_db);
 
 my $CFG = require "unit-app.conf";
 

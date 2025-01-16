@@ -11,12 +11,14 @@ use JSON;
 use lib 'conf', 'lib';
 
 use Plack::Test;
-use HTTP::Request::Common;
 use Plack::Util;
+
+use HTTP::Request::Common;
+
 use Test::More tests => 18;
 use Test::Deep;
 
-use PP::DB qw(connect_db);
+use SmCh::DB qw(connect_db);
 
 my $CFG = do "unit-app.conf";
 my $dbh = connect_db( $CFG, { mysql_multi_statements => 1 } );
@@ -154,14 +156,6 @@ test_resp(
 ############# карта + промокод  ###################
 $answer = [
     {
-        "action" => {
-            "Привет Иванов А." => "Акция по карте 5464 1 применение на карту. Скидка 5%",
-            "aId"               => "3_5_5464",
-            "cId"               => "5"
-        },
-        "reason" => "ok", "action_id" => 3, "status" => "ok"
-    },
-    {
         "action_id" => 2,
         "status"    => "ok",
         "action"    => {
@@ -171,12 +165,20 @@ $answer = [
         },
         "reason" => "ok"
     },
+    {
+        "action" => {
+            "Привет Иванов А." => "Акция по карте 5464 1 применение на карту. Скидка 5%",
+            "aId"               => "3_5_5464",
+            "cId"               => "5"
+        },
+        "reason" => "ok", "action_id" => 3, "status" => "ok"
+    },
 ];
 
 test_resp(
     "/v2/action?cart=1&cardNumber=5464&coupon=vmeste2024",
     $answer,
-    "getAction v2 by card & coupon"
+    "getAction v2 by card & promocode"
 );
 
 ############## карта +  потраченый промокод ###################

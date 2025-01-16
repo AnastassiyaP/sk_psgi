@@ -19,8 +19,8 @@ use Carp;
 use JSON::XS;
 use SFE::Logger::Stderr2;
 
-use PP::DB qw(connect_db);
-use PP::Const;
+use SmCh::DB qw(connect_db);
+use SmCh::Const;
 
 my $CFG = do "./conf/unit-app.conf";
 

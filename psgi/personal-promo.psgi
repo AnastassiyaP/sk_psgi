@@ -22,8 +22,8 @@ use ShopBrand qw(
     checkShopIdsByAddr
 );
 
-use PP::DB qw(connect_db);
-use PP::Const;
+use SmCh::DB qw(connect_db);
+use SmCh::Const;
 
 my $CFG = do "unit-app.conf";
 
@@ -389,7 +389,6 @@ sub put
         } else {
             $receipt_ts = undef;
         }
-        
     }
 
     unless ( $uniq_key && defined $receipt_ts && @actionsId ) {

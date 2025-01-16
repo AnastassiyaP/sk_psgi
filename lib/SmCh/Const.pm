@@ -1,4 +1,4 @@
-package PP::Const;
+package SmCh::Const;
 
 use strict;
 use warnings;
