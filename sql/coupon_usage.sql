@@ -12,5 +12,3 @@ CREATE TABLE `coupon_usage` (
   KEY `card_number` (`card_number`),
   KEY `shop_id` (`shop_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2061 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
-
-
