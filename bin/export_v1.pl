@@ -19,7 +19,7 @@ $dbh->do("DROP table coupon");
 $dbh->do("DROP table coupon_usage");
 
 $dbh->do("
-CREATE TABLE IF NOT EXISTS `actions_v2` (
+CREATE TABLE  `actions_v2` (
   `id`         int unsigned NOT NULL DEFAULT '0' COMMENT 'id акции',
   `status`     enum('run', 'stop', 'draft') NOT NULL DEFAULT 'draft',
   `type`       varchar(255) NOT NULL COMMENT 'Тип акции. coupon, card, promocode',
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS `actions_v2` (
 ");
 
 $dbh->do("
-CREATE TABLE IF NOT EXISTS `coupon` (
+CREATE TABLE `coupon` (
   `id` BIGINT UNSIGNED NOT NULL PRIMARY KEY AUTO_INCREMENT COMMENT 'ID купона',
   `code` varchar(20) NOT NULL DEFAULT '0' COMMENT 'Номер карты, купона или промокод',
   `action_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Номер акции',
@@ -111,8 +111,8 @@ while(my ($search_str, $type) = each(%type_map)) {
   " );
 }
 
+
 #что делать с сard_action.action плейсхолдерами - конвертировать ли, и как
-                 
 $dbh->do( "
     INSERT INTO coupon (
         id,
@@ -129,6 +129,7 @@ $dbh->do( "
 
 my $sth_card_action = $dbh->prepare ( "
     SELECT * FROM card_action where disc_count > 0  ");
+
 $sth_card_action->execute();
 while (my $card_action = $sth_card_action->fetchrow_hashref) {
     my $usages = $card_action->{disc_count};
