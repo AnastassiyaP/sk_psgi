@@ -7,12 +7,14 @@ use lib 'conf', 'lib', 'lib/perl';
 
 use SFE::Logger::Stderr2;
 use SmCh::DB qw(connect_db);
+use Try::Tiny;
+use JSON::XS;
 
 my $CFG = require "unit-app.conf";
 
-SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'info' );
+SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'debug' );
 
-my $dbh = connect_db( $CFG );
+my $dbh = connect_db($CFG);
 
 $dbh->do("DROP table actions_v2");
 $dbh->do("DROP table coupon");
@@ -30,13 +32,14 @@ CREATE TABLE  `actions_v2` (
   `options` json DEFAULT NULL COMMENT 'Опции акции',
   `addr` json DEFAULT NULL COMMENT 'Адреса, для которых работает акция',
   `bmp_fld` blob COMMENT 'Картинка для печати',
+  `update_time` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 ");
 
 $dbh->do("
-CREATE TABLE `coupon` (
+CREATE TABLE  `coupon` (
   `id` BIGINT UNSIGNED NOT NULL PRIMARY KEY AUTO_INCREMENT COMMENT 'ID купона',
   `code` varchar(20) NOT NULL DEFAULT '0' COMMENT 'Номер карты, купона или промокод',
   `action_id` int unsigned NOT NULL DEFAULT '0' COMMENT 'Номер акции',
@@ -49,7 +52,7 @@ CREATE TABLE `coupon` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ");
 $dbh->do("
-CREATE TABLE IF NOT EXISTS `coupon_usage` (
+CREATE TABLE `coupon_usage` (
   `id` BIGINT unsigned NOT NULL AUTO_INCREMENT COMMENT 'ID  погашения купона',
   `coupon_id` BIGINT unsigned NOT NULL DEFAULT '0' COMMENT 'ID купона или связи карты и акции',
   `card_number` bigint unsigned NOT NULL DEFAULT '0' COMMENT 'Номер карты',
@@ -65,71 +68,156 @@ CREATE TABLE IF NOT EXISTS `coupon_usage` (
 ) ENGINE=InnoDB AUTO_INCREMENT=2061 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 ");
 
+Info("Tables created");
+
 my %type_map = (
     "card"=>'card',
     'cp'=>'coupon'
 );
+#TODO:
+#обнулить просроченные купоны
+#для актуальных с m1  -  сохраняем всю акцию в placehlder(найти такие)
+#без m1 - плейсхолдеры по стандартному механизму.
+#Придумать обратную конвертацию чтобы убедиться что других расхождений нет
+# акция по артикулам отличающаяся - разобраться
 
-while(my ($search_str, $type) = each(%type_map)) {
+sub save_action {
+    my $card = shift;
+    my $action_id = $card->{action_id};
+    
+    Info("Card $card->{id} in process");
+    
+    my $status = $dbh->selectrow_array(
+        "select status
+        FROM action_status
+        WHERE action_id = $action_id");
+    my $addr = $dbh->selectrow_array(
+        "select addr
+        FROM card_action_addr
+        WHERE action_id = $action_id");
+    my $bmp_fld = $dbh->selectrow_array(
+        "select bmp_fld
+        FROM actions
+        WHERE parent_id = $action_id");
+    
+    my ($type, $action_body, $placeholders) = split_action_body(decode_json($card->{action}));
+    
+    Debugf("Action %s: type %s, action_body %s, placeholders %s",$action_id, $type, $action_body, $placeholders);
 
-  $dbh->do( "
-    INSERT INTO actions_v2 (
-        id,
-        type,
-        action_body,
-        options,
-        bmp_fld,
-        start_date,
-        end_date,
-        `limit`,
-        status,
-        addr )
-    SELECT
-        a.id,
-        '$type',
-        a.options as action_body,
-        '{}' as options,
-        bmp_fld,
-        ca.start_date,
-        ca.end_date,
-        ca.disc_count_limit,
-        ifnull(s.status, 'draft'),
-        ad.addr
-    FROM actions a
-        LEFT JOIN (
-            select
-                action_id,
-                min(start_date) as start_date,
-                min(end_date) as end_date,
-                min(disc_count_limit) as disc_count_limit
-            FROM card_action
-            GROUP BY action_id
-        ) ca on ca.action_id = a.id
-        LEFT JOIN action_status s ON (a.id = s.action_id)
-       LEFT JOIN card_action_addr ad ON (a.id = ad.action_id)
-    WHERE options->\"\$.cnt.*[0]\" LIKE \"%$search_str.%\"
-  " );
+    unless (defined $type){
+      warn "Unknown type for $action_id; Skip action";
+      return;
+    }
+
+    $dbh->do( "
+        INSERT INTO actions_v2 (
+            id,
+            type,
+            action_body,
+            options,
+            bmp_fld,
+            start_date,
+            end_date,
+            `limit`,
+            status,
+            addr )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ",
+        undef,
+        $action_id,
+        $type,
+        encode_json($action_body),
+        '{}',
+        $bmp_fld,
+        $card->{start_date},
+        $card->{end_date},
+        $card->{disc_count_limit},
+        $status,
+        $addr,
+    );
+    save_coupons ($action_id, $placeholders);
+
 }
 
-
-#что делать с сard_action.action плейсхолдерами - конвертировать ли, и как
-$dbh->do( "
-    INSERT INTO coupon (
-        id,
-        code,
-        action_id
-        -- placeholders
-    )
-    SELECT
+#TODO все купоны акции сохранить сформировав плейсхолдеры в mysql
+sub save_coupons {
+    my ($action_id, $placeholders) = @_;
+    #mysql> select json_object("cnt_2_1",options->"$.cnt.c2[1]") as pl from actions where options like
+    $placeholders = join(', ', %$placeholders);
+    Info("$placeholders");
+    $dbh->do( "
+        INSERT INTO coupon (
+            id,
+            code,
+            action_id,
+            placeholders
+        ) SELECT
         id,
         card_number,
-        action_id
-        -- action
-    FROM card_action " );
+        $action_id,
+        JSON_OBJECT($placeholders)
+        from card_action
+        WHERE action_id = $action_id"
+    );
+    
+}
+
+sub split_action_body {
+  #TODO: в mysql docker перенести action в card_action
+    my $action = shift;
+    Debugf("action body: %s", $action);
+    my $placeholders = {};
+    my $type;
+
+    foreach my $i (2..10) {
+        last unless exists $action->{"cnt"}->{"c$i"};
+        if( $action->{"cnt"}{"c$i"}[0] =~ '^cp\.*'){
+            $type = "coupon";
+        } elsif( $action->{"cnt"}{"c$i"}[0] =~ '^card\.*'){
+            $type = "card";
+        }
+            
+        my $len = @{$action->{"cnt"}->{"c$i"}};
+        foreach my $j (1..$len - 1 ) {
+            my $pl_name = "cnt_$i\_$j";
+            #$placeholders->{$pl_name} = $action->{"cnt"}{"c$i"}[$j];
+            $placeholders->{"'$pl_name'"} = "action->\"\$.cnt.c$i\[$j\]\"";
+            $action->{"cnt"}{"c$i"}[$j] = "%%%$pl_name%%%";
+        }
+    }
+    return $type, $action, $placeholders;
+}
+
+my $sth_action_id = $dbh->prepare (
+    "SELECT distinct action_id
+    FROM card_action
+    WHERE action_id NOT IN (
+        SELECT id FROM actions_v2)");
+
+$sth_action_id->execute();
+while (my $action_id = $sth_action_id->fetchrow_array) {
+    Info("action $action_id in process"); 
+
+    #my $sth_card_action = $dbh->prepare (
+    my $first_card = $dbh->selectrow_hashref(
+        "SELECT *
+        FROM card_action ca
+        WHERE action_id = $action_id
+        limit 1"
+    );
+
+    $dbh->{AutoCommit} = 0;
+    try {
+        save_action($first_card);
+        $dbh->commit;   # commit the changes if we get this far
+    } catch {
+        warn "Transaction aborted because $_"; # Try::Tiny copies $@ into $_
+        eval { $dbh->rollback };
+    };
+}
 
 my $sth_card_action = $dbh->prepare ( "
     SELECT * FROM card_action where disc_count > 0  ");
-
+Info("coupon usage");
 $sth_card_action->execute();
 while (my $card_action = $sth_card_action->fetchrow_hashref) {
     my $usages = $card_action->{disc_count};
@@ -149,6 +237,6 @@ while (my $card_action = $sth_card_action->fetchrow_hashref) {
     $sth->bind_param_array(5, "accepted"); # scalar will be reused for each row
     $sth->execute_array(
       { ArrayTupleStatus => \my @tuple_status } );
-        
 }
+$dbh->commit;
 
