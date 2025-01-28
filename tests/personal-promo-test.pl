@@ -6,7 +6,7 @@ use utf8;
 
 use strict;
 use warnings;
-use JSON;
+use JSON::XS;
 
 use lib 'conf', 'lib';
 
@@ -22,8 +22,8 @@ use SmCh::DB qw(connect_db);
 
 my $CFG = do "unit-app.conf";
 my $dbh = connect_db( $CFG, { mysql_multi_statements => 1 } );
-prepare_db();
 
+prepare_db();
 sub prepare_db
 {
     $dbh->do( "Delete from actions_v2" );
@@ -255,7 +255,6 @@ $cnt = $dbh->selectrow_array(
 is( $cnt, 3, "Coupon usage added" );
 
 ############# put v2 ###################
-
 $res = $test->request(
     PUT '/v2?uniqKey=receipt12&cardNumber=5464&receiptTS=2024-10-10&couponId=1&couponId=4&couponId=6',
     Header => $header,
@@ -268,8 +267,8 @@ $cnt = $dbh->selectrow_array(
 );
 
 is( $cnt, 3, "v2 Coupon usage added" );
-############# bind_cart ###################
 
+############# bind_cart ###################
 $res = $test->request(
     PUT '/bind_cart?cart=cart10&cardNumber=5466&couponId=7&couponId=2&couponId=4',
     Header => $header,

@@ -27,7 +27,7 @@ use SmCh::Const;
 
 my $CFG = do "unit-app.conf";
 
-SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'warning' );
+SFE::Logger->level( $CFG->{ log_level } // 'warning' );
 my $DBH;
 
 #список работающих акций по cardNumber или code
@@ -339,7 +339,7 @@ sub getAction_v2
     my $qmarks = join( ',', ( '?' ) x @couponCode );
 
     my $SQL = sprintf( $SQL_actionByCardNumber_v2, $qmarks );
-
+    #TODO обработать cardNumber=undef
     my $sth = $self->{ dbh }->prepare( $SQL );
     $sth->execute( $cardNumber, @couponCode );
 
@@ -487,14 +487,11 @@ sub prepareAction {
     $placeholders->{ START_DATE }    = $card_action->{ start_date };
     $placeholders->{ END_DATE }      = $card_action->{ end_date };
 
-    #Errf("  action body %s", $action_body);
-
     my $action_body = $card_action->{ action_body };
     $action_body =~ s/%%%(\w+)%%%/$placeholders->{$1}/ge;
 
     my $action = decode_json( $action_body );
-    if ( $action->{ aId } && $action->{ aId } =~ /^[0-9]+$/ )
-    {
+    if ( $action->{ aId } && $action->{ aId } =~ /^[0-9]+$/ ) {
         $action->{ aId } .= "_$card_action->{coupon_id}_$cardNumber";
     }
     else {

@@ -24,7 +24,7 @@ use SmCh::Const;
 
 my $CFG = do "./conf/unit-app.conf";
 
-SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'debug' );
+SFE::Logger->level( $CFG->{ log_level } // 'debug' );
 
 my $app = sub {
     my $env = shift;
@@ -63,11 +63,22 @@ builder
     $app;
 };
 ################################################################################
+sub not_found
+{
+    my $request = shift;
+    my $res = $request->new_response( 404 );
+    return $res->finalize();
+    
+}
+################################################################################
 sub holdout
 {
     my ( $request ) = @_;
 
-    my $params = decode_json( $request->content );
+    my $params;
+    eval {
+        $params = decode_json( $request->content );
+    } or return { "error" => "Malformed JSON string" };
 
     my $dbh = connect_db( $CFG );
 
