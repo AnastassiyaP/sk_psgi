@@ -118,8 +118,6 @@ my %type_map = (
 
 #TODO:
 #обнулить просроченные купоны
-#для актуальных с m1  -  сохраняем всю акцию в placehlder(найти такие)
-#без m1 - плейсхолдеры по стандартному механизму.
 #Придумать обратную конвертацию чтобы убедиться что других расхождений нет
 # Добавить  card в card_usage 
 sub save_action {
@@ -150,7 +148,7 @@ sub save_action {
         $action_body = {};
         #$placeholders = {};
     } else {
-        save_coupons($action_id, $placeholders);
+        save_coupons ($action_id, $placeholders);
     }
     
     Debugf("Action %s: type %s, placeholders %s",$action_id, $type, $placeholders);
@@ -236,8 +234,7 @@ my $sth_action_id = $dbh->prepare (
     "SELECT distinct action_id
     FROM card_action
     WHERE action_id NOT IN (
-        SELECT id FROM actions_v2)"
-);
+        SELECT id FROM actions_v2)");
 
 $sth_action_id->execute();
 while (my $action_id = $sth_action_id->fetchrow_array) {
@@ -306,7 +303,9 @@ while (my $card_action = $sth_card_action->fetchrow_hashref) {
             \@timestamp
         );
 
-        unless ($rows) {
+        if ($rows) {
+	    Info("Inserted $rows rows");
+	} else {
             Errf("failed to insert %s", \@tuple_status);
             last;
         }
@@ -318,8 +317,7 @@ while (my $card_action = $sth_card_action->fetchrow_hashref) {
         my $sth = $dbh->prepare($query);
     }
 }
-Info("Export finished");
-
+Info("Finish");
 #
 #
 #
