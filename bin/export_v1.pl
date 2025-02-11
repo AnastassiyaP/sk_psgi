@@ -12,7 +12,7 @@ use JSON::XS;
 
 my $CFG = require "unit-app.conf";
 
-SFE::Logger::Stderr2->level( $CFG->{ log_level } // 'debug' );
+SFE::Logger->level( $CFG->{ log_level } // 'debug' );
 
 my $dbh = connect_db($CFG);
 
@@ -74,13 +74,54 @@ my %type_map = (
     "card"=>'card',
     'cp'=>'coupon'
 );
+# m1
+#|     11088 |
+#|     12301 |
+#|     12302 |
+#|     12318 |
+#|     12334 |
+#+-----------+
+
+
+#действующие акции
+#|     10534 |
+#|     10535 |
+#|     11088 |
+#|     11089 |
+#|     11566 |
+#|     11731 |
+#|     11732 |
+#|     11733 |
+#|     11734 |
+#|     11735 |
+#|     11736 |
+#|     11737 |
+#|     11738 |
+#|     11887 |
+#|     12088 |
+#|     12091 |
+#|     12092 |
+#|     12093 |
+#|     12094 |
+#|     12095 |
+#|     12301 |
+#|     12302 |
+#|     12306 |
+#|     12307 |
+#|     12308 |
+#|     12311 |
+#|     12312 |
+#|     12318 |
+#|     12320 |
+#|     12334 |
+#|     12395 |
+
 #TODO:
 #обнулить просроченные купоны
 #для актуальных с m1  -  сохраняем всю акцию в placehlder(найти такие)
 #без m1 - плейсхолдеры по стандартному механизму.
 #Придумать обратную конвертацию чтобы убедиться что других расхождений нет
-# акция по артикулам отличающаяся - разобраться
-
+# Добавить  card в card_usage 
 sub save_action {
     my $card = shift;
     my $action_id = $card->{action_id};
@@ -101,13 +142,19 @@ sub save_action {
         WHERE parent_id = $action_id");
     
     my ($type, $action_body, $placeholders) = split_action_body(decode_json($card->{action}));
-    
-    Debugf("Action %s: type %s, action_body %s, placeholders %s",$action_id, $type, $action_body, $placeholders);
-
     unless (defined $type){
-      warn "Unknown type for $action_id; Skip action";
-      return;
+        warn "Unknown type for $action_id; Skip action";
+        return;
     }
+    if ( $card->{end_date} lt '2025-01-20 00:00:00' ){
+        $action_body = {};
+        #$placeholders = {};
+    } else {
+        save_coupons($action_id, $placeholders);
+    }
+    
+    Debugf("Action %s: type %s, placeholders %s",$action_id, $type, $placeholders);
+
 
     $dbh->do( "
         INSERT INTO actions_v2 (
@@ -134,14 +181,12 @@ sub save_action {
         $status,
         $addr,
     );
-    save_coupons ($action_id, $placeholders);
-
 }
 
 #TODO все купоны акции сохранить сформировав плейсхолдеры в mysql
 sub save_coupons {
     my ($action_id, $placeholders) = @_;
-    #mysql> select json_object("cnt_2_1",options->"$.cnt.c2[1]") as pl from actions where options like
+    #Должны получить функцию вида: json_object("cnt_2_1",options->"$.cnt.c2[1]", "cnt_3_1",options->"$.cnt.c3[1]") 
     $placeholders = join(', ', %$placeholders);
     Info("$placeholders");
     $dbh->do( "
@@ -158,11 +203,9 @@ sub save_coupons {
         from card_action
         WHERE action_id = $action_id"
     );
-    
 }
 
 sub split_action_body {
-  #TODO: в mysql docker перенести action в card_action
     my $action = shift;
     Debugf("action body: %s", $action);
     my $placeholders = {};
@@ -174,6 +217,8 @@ sub split_action_body {
             $type = "coupon";
         } elsif( $action->{"cnt"}{"c$i"}[0] =~ '^card\.*'){
             $type = "card";
+        }else {
+            next;
         }
             
         my $len = @{$action->{"cnt"}->{"c$i"}};
@@ -191,7 +236,8 @@ my $sth_action_id = $dbh->prepare (
     "SELECT distinct action_id
     FROM card_action
     WHERE action_id NOT IN (
-        SELECT id FROM actions_v2)");
+        SELECT id FROM actions_v2)"
+);
 
 $sth_action_id->execute();
 while (my $action_id = $sth_action_id->fetchrow_array) {
@@ -216,27 +262,86 @@ while (my $action_id = $sth_action_id->fetchrow_array) {
 }
 
 my $sth_card_action = $dbh->prepare ( "
-    SELECT * FROM card_action where disc_count > 0  ");
+    SELECT ca.id, card_number, disc_count,ca.start_date, a.type FROM card_action ca
+    JOIN actions_v2 a on a.id = ca.action_id 
+    WHERE disc_count > 0  ");
 Info("coupon usage");
 $sth_card_action->execute();
+
+my (@id, @card_number, @timestamp);
+my $query = 
+    "INSERT INTO coupon_usage (
+        coupon_id,
+        card_number,
+        timestamp,
+        uniq_key,
+        shop_id,
+        status
+    ) VALUES(
+        ?,
+        ?,
+        ?,
+        FLOOR(RAND()* pow(10,12)),
+        0,
+        'accepted')";
+my $sth = $dbh->prepare($query);
+
 while (my $card_action = $sth_card_action->fetchrow_hashref) {
     my $usages = $card_action->{disc_count};
-    my @rands = map { int(rand(10) * 10**15) } 1..$usages;
-    my $sth = $dbh->prepare(
-        "INSERT INTO coupon_usage (
-            coupon_id,
-            card_number,
-            uniq_key,
-            shop_id,
-            status
-        ) VALUES(?, ?, ?, ?, ?)");
-    $sth->bind_param_array(1, $card_action->{id});
-    $sth->bind_param_array(2, 0);
-    $sth->bind_param_array(3, [@rands]);
-    $sth->bind_param_array(4, 0);
-    $sth->bind_param_array(5, "accepted"); # scalar will be reused for each row
-    $sth->execute_array(
-      { ArrayTupleStatus => \my @tuple_status } );
+    my $card_number = $card_action->{type} eq 'card'
+        ? $card_action->{card_number}
+        : 0;
+
+
+    push @id, ($card_action->{id}) x $usages;
+    push @card_number, ($card_number) x $usages;
+    push @timestamp, ($card_action->{start_date}) x $usages;
+
+    
+    if (@id >= 1000){
+        my $rows = $sth->execute_array(
+            { ArrayTupleStatus => \my @tuple_status },
+            \@id,
+            \@card_number,
+            \@timestamp
+        );
+
+        unless ($rows) {
+            Errf("failed to insert %s", \@tuple_status);
+            last;
+        }
+        $dbh->commit;
+        
+        @id = ();
+        @card_number = ();
+        @timestamp = ();
+        my $sth = $dbh->prepare($query);
+    }
 }
-$dbh->commit;
+Info("Export finished");
+
+#
+#
+#
+#sub insert{
+#"
+#INSERT INTO coupon_usage (
+#    coupon_id,
+#    card_number,
+#    uniq_key,
+#    shop_id,
+#    status,
+#    timestamp
+#)
+#    SELECT
+#    ca.id,
+#    CASE WHEN a.type='card' then card_number else 0 end,
+#    FLOOR(RAND()* pow(10,12)),
+#    0,
+#    'accepted',
+#    ca.start_date
+#    FROM card_action ca
+#    JOIN actions_v2 a on a.id = ca.action_id 
+#    WHERE disc_count > 0
+#}
 
